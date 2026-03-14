@@ -1,0 +1,29 @@
+%ifndef CONSTANTS_INC
+%define CONSTANTS_INC 1
+
+; Linux syscall numbers (x86_64)
+%define SYS_READ 0
+%define SYS_WRITE 1
+%define SYS_OPEN 2
+%define SYS_CLOSE 3
+%define SYS_SOCKET 41
+%define SYS_CONNECT 42
+%define SYS_ACCEPT 43
+%define SYS_SENDTO 44
+%define SYS_RECVFROM 45
+%define SYS_GETSOCKNAME 51
+%define SYS_SETSOCKOPT 54
+%define SYS_EXIT 60
+
+; Socket constants
+%define AF_INET 2
+%define SOCK_RAW 3
+%define SOCK_DGRAM 2
+%define IPPROTO_IP 0
+%define IPPROTO_TCP 6
+%define IPPROTO_UDP 17
+%define IP_HDRINCL 3
+%define SOL_SOCKET 1
+%define SO_RCVTIMEO 20
+
+%endif
