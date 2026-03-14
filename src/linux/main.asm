@@ -5,6 +5,9 @@ GLOBAL _start
 %include "../common/parse.inc"
 %include "../common/checksum.inc"
 
+%define OUTPUT_BUF_SIZE 131072
+%define OUTPUT_FLUSH_THRESHOLD 98304
+
 SECTION .data
 usage_msg db "Usage: netx-asm <target_ip> [-p port|start-end|-]", 10
 usage_len equ $-usage_msg
@@ -35,15 +38,20 @@ SECTION .bss
 packet_buf resb 60
 recv_buf resb 4096
 out_buf resb 16
+output_buf resb OUTPUT_BUF_SIZE
+output_pos resq 1
 sockaddr_dst resb 16
 sockaddr_tmp resb 16
 sockaddr_local resb 16
 addrlen resd 1
 raw_fd resq 1
+epoll_fd resq 1
 target_ip resd 1
 source_ip resd 1
 last_ttl resb 1
 last_win resw 1
+epoll_event resb 16
+epoll_out resb 16
 
 SECTION .text
 _start:
@@ -123,6 +131,25 @@ _start:
     test rax, rax
     js .error
 
+    mov rax, SYS_EPOLL_CREATE1
+    xor rdi, rdi
+    syscall
+    test rax, rax
+    js .error
+    mov [epoll_fd], rax
+
+    mov dword [epoll_event], EPOLLIN | EPOLLET
+    mov rax, [raw_fd]
+    mov [epoll_event+8], rax
+    mov rax, SYS_EPOLL_CTL
+    mov rdi, [epoll_fd]
+    mov rsi, EPOLL_CTL_ADD
+    mov rdx, [raw_fd]
+    lea r10, [epoll_event]
+    syscall
+    test rax, rax
+    js .error
+
     lea rdi, [packet_buf]
     xor rax, rax
     mov rcx, 60/8
@@ -191,9 +218,20 @@ _start:
     test rax, rax
     js .error
 
-    mov r11d, 4
+    mov r11d, 8
 
-.recv_loop:
+.epoll_loop:
+    mov rax, SYS_EPOLL_WAIT
+    mov rdi, [epoll_fd]
+    lea rsi, [epoll_out]
+    mov rdx, 1
+    xor r10, r10
+    syscall
+    test rax, rax
+    js .report_filtered
+    cmp rax, 0
+    je .epoll_noevent
+
     mov rax, SYS_RECVFROM
     mov rdi, [raw_fd]
     lea rsi, [recv_buf]
@@ -239,7 +277,12 @@ _start:
 
 .recv_mismatch:
     dec r11d
-    jnz .recv_loop
+    jnz .epoll_loop
+    jmp .report_filtered
+
+.epoll_noevent:
+    dec r11d
+    jnz .epoll_loop
     jmp .report_filtered
 
 .report_open:
@@ -283,6 +326,14 @@ _start:
     mov r12d, 1
 
 .exit:
+    mov rax, [epoll_fd]
+    test rax, rax
+    jz .exit_close_raw
+    mov rdi, rax
+    mov rax, SYS_CLOSE
+    syscall
+
+.exit_close_raw:
     mov rax, [raw_fd]
     test rax, rax
     jz .exit_now

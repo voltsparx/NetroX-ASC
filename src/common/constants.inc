@@ -13,6 +13,9 @@
 %define SYS_RECVFROM 45
 %define SYS_GETSOCKNAME 51
 %define SYS_SETSOCKOPT 54
+%define SYS_EPOLL_CREATE1 291
+%define SYS_EPOLL_CTL 233
+%define SYS_EPOLL_WAIT 232
 %define SYS_EXIT 60
 
 ; Socket constants
@@ -25,5 +28,8 @@
 %define IP_HDRINCL 3
 %define SOL_SOCKET 1
 %define SO_RCVTIMEO 20
+%define EPOLLIN 0x001
+%define EPOLLET 0x80000000
+%define EPOLL_CTL_ADD 1
 
 %endif

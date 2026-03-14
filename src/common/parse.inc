@@ -2,6 +2,7 @@
 ; rdi -> null-terminated IPv4 string
 ; returns eax = host-order IPv4, or 0 on error
 parse_ip:
+    push rbx
     xor eax, eax
     xor r8d, r8d
     xor r9d, r9d
@@ -43,16 +44,19 @@ parse_ip:
     shl ecx, 3
     shl ebx, cl
     or eax, ebx
+    pop rbx
     ret
 
 .parse_ip_invalid:
     xor eax, eax
+    pop rbx
     ret
 
 ; parse_port
 ; rdi -> null-terminated port string
 ; returns ax = host-order port, or 0 on error
 parse_port:
+    push rbx
     xor eax, eax
 
 .parse_port_loop:
@@ -70,16 +74,19 @@ parse_port:
     jmp .parse_port_loop
 
 .parse_port_done:
+    pop rbx
     ret
 
 .parse_port_invalid:
     xor eax, eax
+    pop rbx
     ret
 
 ; parse_port_range
 ; rdi -> null-terminated string: "N" or "N-M"
 ; returns ax = start port, dx = end port; ax=0 on error
 parse_port_range:
+    push rbx
     xor eax, eax
     xor edx, edx
     xor r8d, r8d
@@ -135,15 +142,18 @@ parse_port_range:
     jz .parse_range_invalid
     cmp edx, eax
     jb .parse_range_invalid
+    pop rbx
     ret
 
 .parse_range_single:
     test eax, eax
     jz .parse_range_invalid
     mov edx, eax
+    pop rbx
     ret
 
 .parse_range_invalid:
     xor eax, eax
     xor edx, edx
+    pop rbx
     ret
