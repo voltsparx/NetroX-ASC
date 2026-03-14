@@ -13,11 +13,15 @@ extern connect
 extern getsockname
 extern GetCommandLineA
 extern GetStdHandle
+extern QueryPerformanceCounter
+extern QueryPerformanceFrequency
 extern WriteFile
 extern ExitProcess
 
 %include "../common/parse.inc"
 %include "../common/checksum.inc"
+%include "../common/packet.inc"
+%include "../common/engine.inc"
 
 %define AF_INET 2
 %define SOCK_RAW 3
@@ -35,8 +39,14 @@ extern ExitProcess
 %define OUTPUT_FLUSH_THRESHOLD 98304
 
 SECTION .data
-usage_msg db "Usage: netx-asm.exe <target_ip> [-p port|start-end|-]", 13, 10
+usage_msg db "Usage: netx-asm.exe <target_ip> [-p port|start-end|-] [--rate N]", 13, 10
 usage_len equ $-usage_msg
+banner_msg db "   _  __    __           ___   ______  ___", 13, 10
+           db "  / |/ /__ / /___ ______/ _ | / __/  |/  /", 13, 10
+           db " /    / -_) __/\\ \\ /___/ __ |_\\ \\/ /|_/ / ", 13, 10
+           db "/_/|_/\\__/\\__//_\\_\\   /_/ |_/___/_/  /_/  ", 13, 10
+           db 13, 10
+banner_len equ $-banner_msg
 closed_msg db " CLOSED", 13, 10
 closed_len equ $-closed_msg
 filtered_msg db " FILTERED", 13, 10
@@ -47,6 +57,14 @@ open_win_msg db " WIN="
 open_win_len equ $-open_win_msg
 newline_msg db 13, 10
 newline_len equ $-newline_msg
+open_count_msg db "OPEN COUNT: "
+open_count_len equ $-open_count_msg
+open_ports_msg db "OPEN PORTS: "
+open_ports_len equ $-open_ports_msg
+none_msg db "none"
+none_len equ $-none_msg
+space_msg db " "
+space_len equ $-space_msg
 error_msg db "ERROR", 13, 10
 error_len equ $-error_msg
 
@@ -78,6 +96,18 @@ target_ip resd 1
 source_ip resd 1
 last_ttl resb 1
 last_win resw 1
+result_map resb 8192
+open_count resd 1
+engine_id resb 1
+rate_value resd 1
+rate_cycles resq 1
+rate_enabled resb 1
+last_send_tsc resq 1
+tsc_hz resq 1
+qpc_freq resq 1
+qpc_start resq 1
+qpc_end resq 1
+tsc_start resq 1
 
 SECTION .text
 _start:
@@ -123,16 +153,18 @@ _start:
     mov [target_ip], eax
 
     mov rdi, rdx
+
+.arg_loop:
     call next_token
     test rax, rax
     jz .ports_ready
     mov rsi, rax
     cmp byte [rsi], '-'
-    jne .ports_ready
+    jne .arg_next
     cmp byte [rsi+1], 'p'
-    jne .ports_ready
+    jne .check_rate
     cmp byte [rsi+2], 0
-    jne .ports_ready
+    jne .check_rate
 
     mov rdi, rdx
     call next_token
@@ -145,7 +177,7 @@ _start:
     jne .parse_range
     mov word [start_port], 1
     mov word [end_port], 65535
-    jmp .ports_ready
+    jmp .arg_next
 
 .parse_range:
     call parse_port_range
@@ -153,15 +185,52 @@ _start:
     jz .usage
     mov [start_port], ax
     mov [end_port], dx
+    jmp .arg_next
+
+.check_rate:
+    cmp byte [rsi], '-'
+    jne .arg_next
+    cmp byte [rsi+1], '-'
+    jne .arg_next
+    cmp byte [rsi+2], 'r'
+    jne .arg_next
+    cmp byte [rsi+3], 'a'
+    jne .arg_next
+    cmp byte [rsi+4], 't'
+    jne .arg_next
+    cmp byte [rsi+5], 'e'
+    jne .arg_next
+    cmp byte [rsi+6], 0
+    jne .arg_next
+    mov rdi, rdx
+    call next_token
+    test rax, rax
+    jz .usage
+    mov rdi, rax
+    call parse_u32
+    test eax, eax
+    jz .usage
+    mov [rate_value], eax
+    jmp .arg_next
+
+.arg_next:
+    mov rdi, rdx
+    jmp .arg_loop
 
 .ports_ready:
     mov ax, [src_port]
     xchg al, ah
     mov [src_port_be], ax
+    mov byte [engine_id], ENGINE_SYN
+    lea rsi, [banner_msg]
+    mov edx, banner_len
+    call buf_write
 
     call get_local_ip
     test eax, eax
     jnz .error
+
+    call init_rate
 
     sub rsp, 40
     mov ecx, AF_INET
@@ -193,37 +262,7 @@ _start:
     call setsockopt
     add rsp, 40
 
-    lea rdi, [packet_buf]
-    xor rax, rax
-    mov rcx, 60/8
-    rep stosq
-
-    mov byte [packet_buf], 0x45
-    mov byte [packet_buf+1], 0
-    mov word [packet_buf+2], 0x2800
-    mov word [packet_buf+4], 0x3412
-    mov word [packet_buf+6], 0x0040
-    mov byte [packet_buf+8], 64
-    mov byte [packet_buf+9], 6
-    mov word [packet_buf+10], 0
-    mov eax, [source_ip]
-    mov [packet_buf+12], eax
-    mov eax, [target_ip]
-    mov [packet_buf+16], eax
-
-    lea rdi, [packet_buf]
-    call ip_checksum
-    mov [packet_buf+10], ax
-
-    mov ax, [src_port_be]
-    mov [packet_buf+20], ax
-    mov dword [packet_buf+24], 0x78563412
-    mov dword [packet_buf+28], 0
-    mov byte [packet_buf+32], 0x50
-    mov byte [packet_buf+33], 0x02
-    mov word [packet_buf+34], 0xFFFF
-    mov word [packet_buf+36], 0
-    mov word [packet_buf+38], 0
+    call init_packet_template
 
     mov word [sockaddr_dst], AF_INET
     mov eax, [target_ip]
@@ -234,20 +273,15 @@ _start:
 
 .scan_loop:
     cmp ecx, r15d
-    ja .exit
+    ja .scan_done
 
     mov ax, cx
     xchg al, ah
     mov [dst_port_be], ax
     mov ax, [dst_port_be]
-    mov [packet_buf+22], ax
-    mov [sockaddr_dst+2], ax
+    call build_packet
 
-    mov word [packet_buf+36], 0
-    lea rdi, [packet_buf]
-    call tcp_checksum
-    mov [packet_buf+36], ax
-
+    call rate_gate
     sub rsp, 56
     mov rcx, [sock_fd]
     lea rdx, [packet_buf]
@@ -306,6 +340,7 @@ _start:
     jmp .report_filtered
 
 .report_open:
+    call record_open
     mov ax, cx
     call write_open_intel
     jmp .next_port
@@ -328,6 +363,10 @@ _start:
     inc ecx
     jmp .scan_loop
 
+.scan_done:
+    call write_summary
+    jmp .exit
+
 .usage:
     lea rsi, [usage_msg]
     mov edx, usage_len
@@ -335,11 +374,13 @@ _start:
     jmp .exit
 
 .error:
+    call flush_output
     lea rsi, [error_msg]
     mov edx, error_len
     call write_stdout
 
 .exit:
+    call flush_output
     mov rax, [sock_fd]
     cmp rax, INVALID_SOCKET
     je .cleanup
@@ -369,51 +410,257 @@ write_stdout:
     add rsp, 40
     ret
 
+; rsi=src, edx=len
+buf_write:
+    mov r8, rsi
+    mov r9, rdx
+    mov rax, [output_pos]
+    mov rcx, rax
+    add rcx, r9
+    cmp rcx, OUTPUT_BUF_SIZE
+    ja .buf_flush
+    cmp rcx, OUTPUT_FLUSH_THRESHOLD
+    jae .buf_flush
+
+.buf_write:
+    lea rdi, [output_buf+rax]
+    mov rsi, r8
+    mov rdx, r9
+    mov rcx, rdx
+    rep movsb
+    add rax, r9
+    mov [output_pos], rax
+    ret
+
+.buf_flush:
+    call flush_output
+    mov rax, [output_pos]
+    jmp .buf_write
+
+flush_output:
+    mov rax, [output_pos]
+    test rax, rax
+    jz .flush_done
+    lea rsi, [output_buf]
+    mov edx, eax
+    call write_stdout
+    mov qword [output_pos], 0
+
+.flush_done:
+    ret
+
 ; inputs: ax=value
-write_u16:
+append_u16:
     movzx eax, ax
     lea rsi, [out_buf+6]
-    xor r8d, r8d
+    xor rcx, rcx
 
 .u16_digits:
-    xor edx, edx
-    mov r10d, 10
-    div r10d
-    add dl, '0'
+    mov r8d, eax
+    mov r11d, 0xCCCCCCCD
+    mul r11d
+    mov eax, edx
+    shr eax, 3
+    lea edx, [eax*4 + eax]
+    add edx, edx
+    sub r8d, edx
+    add r8b, '0'
     dec rsi
-    mov [rsi], dl
-    inc r8d
+    mov [rsi], r8b
+    inc rcx
     test eax, eax
     jnz .u16_digits
 
-    mov edx, r8d
-    call write_stdout
+    mov edx, ecx
+    call buf_write
     ret
 
 ; inputs: ax=port, r9=msg ptr, r10d=msg len
 write_result:
-    call write_u16
+    call append_u16
     mov rsi, r9
     mov edx, r10d
-    call write_stdout
+    call buf_write
     ret
 
 ; inputs: ax=port
 write_open_intel:
-    call write_u16
+    call append_u16
     lea rsi, [open_ttl_msg]
     mov edx, open_ttl_len
-    call write_stdout
+    call buf_write
     movzx ax, byte [last_ttl]
-    call write_u16
+    call append_u16
     lea rsi, [open_win_msg]
     mov edx, open_win_len
-    call write_stdout
+    call buf_write
     mov ax, [last_win]
-    call write_u16
+    call append_u16
     lea rsi, [newline_msg]
     mov edx, newline_len
-    call write_stdout
+    call buf_write
+    ret
+
+record_open:
+    mov eax, ecx
+    dec eax
+    mov edx, eax
+    shr eax, 3
+    and edx, 7
+    mov r8b, 1
+    shl r8b, dl
+    or byte [result_map+rax], r8b
+    inc dword [open_count]
+    ret
+
+write_summary:
+    lea rsi, [open_count_msg]
+    mov edx, open_count_len
+    call buf_write
+    mov ax, [open_count]
+    call append_u16
+    lea rsi, [newline_msg]
+    mov edx, newline_len
+    call buf_write
+
+    mov ax, [open_count]
+    test ax, ax
+    jz .summary_none
+
+    lea rsi, [open_ports_msg]
+    mov edx, open_ports_len
+    call buf_write
+    movzx ecx, word [start_port]
+    movzx r15d, word [end_port]
+
+.summary_loop:
+    cmp ecx, r15d
+    ja .summary_done
+    mov eax, ecx
+    dec eax
+    mov edx, eax
+    shr eax, 3
+    and edx, 7
+    mov r8b, 1
+    shl r8b, dl
+    test byte [result_map+rax], r8b
+    jz .summary_next
+    mov ax, cx
+    call append_u16
+    lea rsi, [space_msg]
+    mov edx, space_len
+    call buf_write
+
+.summary_next:
+    inc ecx
+    jmp .summary_loop
+
+.summary_done:
+    lea rsi, [newline_msg]
+    mov edx, newline_len
+    call buf_write
+    ret
+
+.summary_none:
+    lea rsi, [open_ports_msg]
+    mov edx, open_ports_len
+    call buf_write
+    lea rsi, [none_msg]
+    mov edx, none_len
+    call buf_write
+    lea rsi, [newline_msg]
+    mov edx, newline_len
+    call buf_write
+    ret
+
+rate_gate:
+    cmp byte [rate_enabled], 0
+    je .rate_done
+    rdtsc
+    shl rdx, 32
+    or rax, rdx
+    mov r8, [last_send_tsc]
+    test r8, r8
+    jz .rate_store
+
+.rate_wait:
+    mov r9, rax
+    sub r9, r8
+    cmp r9, [rate_cycles]
+    jae .rate_store
+    rdtsc
+    shl rdx, 32
+    or rax, rdx
+    jmp .rate_wait
+
+.rate_store:
+    mov [last_send_tsc], rax
+
+.rate_done:
+    ret
+
+init_rate:
+    mov eax, [rate_value]
+    test eax, eax
+    jz .init_rate_done
+    call calibrate_tsc
+    mov ecx, [rate_value]
+    mov rax, [tsc_hz]
+    xor rdx, rdx
+    div rcx
+    mov [rate_cycles], rax
+    mov byte [rate_enabled], 1
+
+.init_rate_done:
+    ret
+
+calibrate_tsc:
+    sub rsp, 40
+    lea rcx, [qpc_freq]
+    call QueryPerformanceFrequency
+    add rsp, 40
+    test eax, eax
+    jz .calib_done
+
+    sub rsp, 40
+    lea rcx, [qpc_start]
+    call QueryPerformanceCounter
+    add rsp, 40
+    rdtsc
+    shl rdx, 32
+    or rax, rdx
+    mov [tsc_start], rax
+
+    mov rax, [qpc_freq]
+    xor rdx, rdx
+    mov r10, 20
+    div r10
+    mov r11, rax
+
+.calib_loop:
+    sub rsp, 40
+    lea rcx, [qpc_end]
+    call QueryPerformanceCounter
+    add rsp, 40
+    mov rax, [qpc_end]
+    sub rax, [qpc_start]
+    cmp rax, r11
+    jb .calib_loop
+    mov r8, rax
+
+    rdtsc
+    shl rdx, 32
+    or rax, rdx
+    mov r9, rax
+    mov rax, r9
+    sub rax, [tsc_start]
+    mov rcx, [qpc_freq]
+    mul rcx
+    mov rcx, r8
+    div rcx
+    mov [tsc_hz], rax
+
+.calib_done:
     ret
 
 ; rdi -> command line string

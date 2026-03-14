@@ -32,3 +32,7 @@ netx-asm.exe <target_ip> [-p port|start-end|-]
 - Default range is ports 1-1000; use `-p -` for 1-65535.
 - Source IP is detected by a temporary UDP `connect` to the target.
 - Linux uses `epoll` for non-blocking receive checks between sends.
+- Output is buffered (128KB) and flushed at ~75% to reduce syscall overhead.
+- End-of-scan summary prints open count and a list built from a bitfield map.
+- `--rate <N>` throttles packets/sec using an RDTSC-calibrated cycle budget.
+- ASCII banner prints at startup.

@@ -16,6 +16,7 @@
 %define SYS_EPOLL_CREATE1 291
 %define SYS_EPOLL_CTL 233
 %define SYS_EPOLL_WAIT 232
+%define SYS_CLOCK_GETTIME 228
 %define SYS_EXIT 60
 
 ; Socket constants
@@ -31,5 +32,6 @@
 %define EPOLLIN 0x001
 %define EPOLLET 0x80000000
 %define EPOLL_CTL_ADD 1
+%define CLOCK_MONOTONIC 1
 
 %endif

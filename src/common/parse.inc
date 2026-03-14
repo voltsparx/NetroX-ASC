@@ -157,3 +157,33 @@ parse_port_range:
     xor edx, edx
     pop rbx
     ret
+
+; parse_u32
+; rdi -> null-terminated decimal string
+; returns eax = value, or 0 on error
+parse_u32:
+    push rbx
+    xor eax, eax
+
+.parse_u32_loop:
+    movzx ebx, byte [rdi]
+    cmp bl, 0
+    je .parse_u32_done
+    sub bl, '0'
+    cmp bl, 9
+    ja .parse_u32_invalid
+    imul eax, eax, 10
+    add eax, ebx
+    inc rdi
+    jmp .parse_u32_loop
+
+.parse_u32_done:
+    test eax, eax
+    jz .parse_u32_invalid
+    pop rbx
+    ret
+
+.parse_u32_invalid:
+    xor eax, eax
+    pop rbx
+    ret
