@@ -31,6 +31,8 @@ extern ExitProcess
 %define INVALID_SOCKET -1
 %define SOCKET_ERROR -1
 %define STD_OUTPUT_HANDLE -11
+%define OUTPUT_BUF_SIZE 131072
+%define OUTPUT_FLUSH_THRESHOLD 98304
 
 SECTION .data
 usage_msg db "Usage: netx-asm.exe <target_ip> [-p port|start-end|-]", 13, 10
@@ -62,6 +64,8 @@ wsa_data resb 512
 packet_buf resb 60
 recv_buf resb 4096
 out_buf resb 16
+output_buf resb OUTPUT_BUF_SIZE
+output_pos resq 1
 cmd_buf resb 1024
 sockaddr_dst resb 16
 sockaddr_tmp resb 16
