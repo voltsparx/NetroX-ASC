@@ -24,6 +24,22 @@ sudo ./netx-asm <target_ip> [-p port|start-end|-] [--rate N] [--iface IFACE] [--
 netx-asm.exe <target_ip> [-p port|start-end|-] [--rate N] [--scan MODE] [--stabilize]
 ```
 
+```sh
+sudo ./netx-asm --prompt-mode
+```
+
+```sh
+netx-asm.exe --prompt-mode
+```
+
+```sh
+./netx-asm --about
+```
+
+```sh
+netx-asm.exe --about
+```
+
 ## Notes
 
 - Raw sockets require root or the `cap_net_raw` capability.
@@ -37,6 +53,8 @@ netx-asm.exe <target_ip> [-p port|start-end|-] [--rate N] [--scan MODE] [--stabi
 - `--rate <N>` throttles packets/sec using an RDTSC-calibrated cycle budget.
 - `--stabilize` enables adaptive rate control (auto-baseline is 200k pps if `--rate` is not set).
 - `--scan MODE` supports: `syn`, `ack`, `fin`, `null`, `xmas`, `window`, `maimon` (TCP flag scans).
+- `--prompt-mode` launches an interactive configuration wizard.
+- `--about` prints banner + metadata.
 - ASCII banner prints at startup.
 - Linux `--iface <name>` enables an `AF_PACKET` send engine (NIC verified, link-layer send). Windows stays on WinSock raw sockets for now.
 - The send loop routes through an `intelligence` gate (currently rate control) for future adaptive logic.

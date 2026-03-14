@@ -1,3 +1,7 @@
+; ===========================================================================
+; Netx-ASM  |  Windows x86_64  |  Part 1 of 4: Headers, externs, .data, .bss
+; ===========================================================================
+
 BITS 64
 DEFAULT REL
 GLOBAL _start
@@ -15,6 +19,7 @@ extern GetCommandLineA
 extern GetStdHandle
 extern QueryPerformanceCounter
 extern QueryPerformanceFrequency
+extern ReadFile
 extern WriteFile
 extern ExitProcess
 
@@ -22,101 +27,210 @@ extern ExitProcess
 %include "../common/checksum.inc"
 %include "../common/packet.inc"
 %include "../common/engine.inc"
+%include "../common/intelligence.inc"
 
-%define AF_INET 2
-%define SOCK_RAW 3
-%define SOCK_DGRAM 2
-%define IPPROTO_IP 0
-%define IPPROTO_TCP 6
-%define IPPROTO_UDP 17
-%define IP_HDRINCL 2
-%define SOL_SOCKET 0xFFFF
-%define SO_RCVTIMEO 0x1006
-%define INVALID_SOCKET -1
-%define SOCKET_ERROR -1
+%define AF_INET          2
+%define SOCK_RAW         3
+%define SOCK_DGRAM       2
+%define IPPROTO_IP       0
+%define IPPROTO_TCP      6
+%define IPPROTO_UDP      17
+%define IP_HDRINCL       2
+%define SOL_SOCKET       0xFFFF
+%define SO_RCVTIMEO      0x1006
+%define INVALID_SOCKET   -1
+%define SOCKET_ERROR     -1
 %define STD_OUTPUT_HANDLE -11
-%define OUTPUT_BUF_SIZE 131072
+%define STD_INPUT_HANDLE  -10
+%define OUTPUT_BUF_SIZE   131072
 %define OUTPUT_FLUSH_THRESHOLD 98304
 
+; ---------------------------------------------------------------------------
+; .data
+; ---------------------------------------------------------------------------
 SECTION .data
-usage_msg db "Usage: netx-asm.exe <target_ip> [-p port|start-end|-] [--rate N] [--scan MODE] [--stabilize]", 13, 10
-usage_len equ $-usage_msg
-banner_msg db "   _  __    __           ___   ______  ___", 13, 10
-           db "  / |/ /__ / /___ ______/ _ | / __/  |/  /", 13, 10
-           db " /    / -_) __/\\ \\ /___/ __ |_\\ \\/ /|_/ / ", 13, 10
-           db "/_/|_/\\__/\\__//_\\_\\   /_/ |_/___/_/  /_/  ", 13, 10
-           db 13, 10
-banner_len equ $-banner_msg
-closed_msg db " CLOSED", 13, 10
-closed_len equ $-closed_msg
-filtered_msg db " FILTERED", 13, 10
-filtered_len equ $-filtered_msg
-open_ttl_msg db " OPEN TTL="
-open_ttl_len equ $-open_ttl_msg
-open_win_msg db " WIN="
-open_win_len equ $-open_win_msg
-newline_msg db 13, 10
-newline_len equ $-newline_msg
-open_count_msg db "OPEN COUNT: "
-open_count_len equ $-open_count_msg
-open_ports_msg db "OPEN PORTS: "
-open_ports_len equ $-open_ports_msg
-none_msg db "none"
-none_len equ $-none_msg
-space_msg db " "
-space_len equ $-space_msg
-error_msg db "ERROR", 13, 10
-error_len equ $-error_msg
 
-hdrincl dd 1
-timeout_ms dd 1000
+usage_msg   db "Usage: netx-asm.exe <target_ip> [-p port|start-end|-]", 13, 10
+            db "       [--rate N] [--scan MODE] [--bench] [--os]", 13, 10
+            db "       [--stabilize] [--about] [--prompt-mode]", 13, 10
+            db "Scan modes: syn ack fin null xmas window maimon", 13, 10
+usage_len   equ $-usage_msg
 
-src_port dw 40000
-start_port dw 1
-end_port dw 1000
+banner_msg  db "   _  __    __           ___   ______  ___", 13, 10
+            db "  / |/ /__ / /___ ______/ _ | / __/  |/  /", 13, 10
+            db " /    / -_) __/\\ \\/___/ __ |_\\ \\/ /|_/ / ", 13, 10
+            db "/_/|_/\\__/\\__//_\\_\\   /_/ |_/___/_/  /_/  ", 13, 10, 13, 10
+banner_len  equ $-banner_msg
+
+about_msg   db "author : voltsparx", 13, 10
+            db "email  : voltsparx@gmail.com", 13, 10
+            db "repo   : https://github.com/voltsparx/Netx-ASM", 13, 10
+            db "github : github.com/voltsparx", 13, 10
+about_len   equ $-about_msg
+
+prompt_intro     db "Netx-ASM interactive prompt", 13, 10
+prompt_intro_len equ $-prompt_intro
+prompt_target    db "Target IP: "
+prompt_target_len equ $-prompt_target
+prompt_ports     db "Ports [1-1000 | - for all]: "
+prompt_ports_len equ $-prompt_ports
+prompt_scan      db "Scan mode [syn|ack|fin|null|xmas|window|maimon] (default syn): "
+prompt_scan_len  equ $-prompt_scan
+prompt_rate      db "Rate pps (leave blank for unlimited): "
+prompt_rate_len  equ $-prompt_rate
+prompt_stab      db "Stabilize? (y/n) [n]: "
+prompt_stab_len  equ $-prompt_stab
+prompt_invalid   db "Invalid input", 13, 10
+prompt_invalid_len equ $-prompt_invalid
+
+closed_msg      db " CLOSED", 13, 10
+closed_len      equ $-closed_msg
+filtered_msg    db " FILTERED", 13, 10
+filtered_len    equ $-filtered_msg
+open_ttl_msg    db " OPEN TTL="
+open_ttl_len    equ $-open_ttl_msg
+open_win_msg    db " WIN="
+open_win_len    equ $-open_win_msg
+newline_msg     db 13, 10
+newline_len     equ $-newline_msg
+space_msg       db " "
+space_len       equ $-space_msg
+error_msg       db "ERROR", 13, 10
+error_len       equ $-error_msg
+
+open_count_msg  db "OPEN COUNT: "
+open_count_len  equ $-open_count_msg
+open_ports_msg  db "OPEN PORTS: "
+open_ports_len  equ $-open_ports_msg
+none_msg        db "none"
+none_len        equ $-none_msg
+
+os_prefix_msg   db " OS="
+os_prefix_len   equ $-os_prefix_msg
+
+bench_hdr_msg   db 13, 10, "--- NETX-ASM BENCHMARK ---", 13, 10
+bench_hdr_len   equ $-bench_hdr_msg
+bench_ports_msg db "Ports scanned : "
+bench_ports_len equ $-bench_ports_msg
+bench_open_msg  db "Open found    : "
+bench_open_len  equ $-bench_open_msg
+bench_time_msg  db "Elapsed (ms)  : "
+bench_time_len  equ $-bench_time_msg
+bench_end_msg   db "--------------------------", 13, 10
+bench_end_len   equ $-bench_end_msg
+
+os_str_0    db "Linux-5.x/6.x", 0
+os_str_1    db "Linux-3.x/4.x", 0
+os_str_2    db "Windows-10/11", 0
+os_str_3    db "Windows-7/8",   0
+os_str_4    db "macOS/BSD",      0
+os_str_5    db "Network-Device", 0
+os_str_6    db "Unknown",        0
+os_str_ptrs dq os_str_0, os_str_1, os_str_2, os_str_3
+            dq os_str_4, os_str_5, os_str_6
+
+hdrincl     dd 1
+timeout_ms  dd 1000
+
+src_port    dw 40000
+start_port  dw 1
+end_port    dw 1000
 src_port_be dw 0
 dst_port_be dw 0
 
+; ---------------------------------------------------------------------------
+; .bss
+; ---------------------------------------------------------------------------
 SECTION .bss
-wsa_data resb 512
-packet_buf resb 60
-recv_buf resb 4096
-out_buf resb 16
-output_buf resb OUTPUT_BUF_SIZE
-output_pos resq 1
-cmd_buf resb 1024
-sockaddr_dst resb 16
-sockaddr_tmp resb 16
-sockaddr_local resb 16
-addrlen resd 1
-sock_fd resq 1
-stdout_handle resq 1
-bytes_written resd 1
-target_ip resd 1
-source_ip resd 1
-last_ttl resb 1
-last_win resw 1
-result_map resb 8192
-open_count resd 1
-engine_id resb 1
-scan_mode resb 1
-rate_value resd 1
-rate_cycles resq 1
+
+wsa_data        resb 512
+packet_buf      resb 60
+recv_buf        resb 4096
+out_buf         resb 16
+output_buf      resb OUTPUT_BUF_SIZE
+output_pos      resq 1
+cmd_buf         resb 1024
+
+sockaddr_dst    resb 16
+sockaddr_tmp    resb 16
+sockaddr_local  resb 16
+addrlen         resd 1
+
+sock_fd         resq 1
+stdout_handle   resq 1
+stdin_handle    resq 1
+bytes_written   resd 1
+bytes_read      resd 1
+
+target_ip       resd 1
+source_ip       resd 1
+last_ttl        resb 1
+last_win        resw 1
+
+result_map      resb 8192
+open_count      resd 1
+
+engine_id       resb 1
+scan_mode       resb 1
+
+rate_value      resd 1
+rate_cycles     resq 1
 rate_min_cycles resq 1
 rate_max_cycles resq 1
-rate_enabled resb 1
-last_send_tsc resq 1
-tsc_hz resq 1
-qpc_freq resq 1
-qpc_start resq 1
-qpc_end resq 1
-tsc_start resq 1
-stab_enabled resb 1
-stab_sent resd 1
-stab_recv resd 1
-stab_timeout resd 1
+rate_enabled    resb 1
+last_send_tsc   resq 1
+tsc_hz          resq 1
+qpc_freq        resq 1
+qpc_start       resq 1
+qpc_end         resq 1
+tsc_start       resq 1
+
+stab_enabled    resb 1
+stab_sent       resd 1
+stab_recv       resd 1
+stab_timeout    resd 1
+
+input_buf       resb 256
+prompt_mode     resb 1
+bench_enabled   resb 1
+os_enabled      resb 1
+bench_start_tsc resq 1
+bench_end_tsc   resq 1
+os_result_idx   resb 1
+intel_rtt_table     resd 65535
+intel_ipid_ring     resw 6
+intel_ipid_idx      resb 1
+intel_lb_ttl        resb 5
+intel_lb_win        resw 5
+intel_lb_ts         resd 5
+intel_lb_opthash    resd 5
+intel_lb_idx        resb 1
+intel_rtt_before    resq 1
+intel_fp_ttl        resb 1
+intel_fp_win        resw 1
+intel_fp_mss        resw 1
+intel_fp_wscale     resb 1
+intel_fp_sack       resb 1
+intel_fp_ts         resb 1
+intel_fp_ts_val     resd 1
+intel_fp_df         resb 1
+intel_fp_ipid_class resb 1
+intel_fp_opthash    resd 1
+intel_fp_scores     resb 7
+intel_fp_best_idx   resb 1
+intel_fp_best_score resb 1
+intel_svc_id        resb 1
+intel_svc_name      resb 16
+intel_banner        resb 64
+intel_banner_len    resw 1
+intel_port_cur      resw 1
+
+; ===========================================================================
+; Netx-ASM  |  Windows x86_64  |  Part 2 of 4: _start, args, init, scan loop
+; ===========================================================================
 
 SECTION .text
+
 _start:
     mov qword [sock_fd], INVALID_SOCKET
     sub rsp, 40
@@ -124,7 +238,13 @@ _start:
     call GetStdHandle
     add rsp, 40
     mov [stdout_handle], rax
+    sub rsp, 40
+    mov ecx, STD_INPUT_HANDLE
+    call GetStdHandle
+    add rsp, 40
+    mov [stdin_handle], rax
 
+    ; WSAStartup
     sub rsp, 40
     mov ecx, 0x0202
     lea rdx, [wsa_data]
@@ -133,12 +253,12 @@ _start:
     test eax, eax
     jne .error
 
+    ; Copy command line to cmd_buf
     sub rsp, 40
     call GetCommandLineA
     add rsp, 40
     mov rsi, rax
     lea rdi, [cmd_buf]
-
 .copy_cmd:
     mov al, [rsi]
     mov [rdi], al
@@ -147,13 +267,26 @@ _start:
     test al, al
     jnz .copy_cmd
 
+    ; Skip program name token
     lea rdi, [cmd_buf]
     call next_token
     mov rdi, rdx
+
+    ; First real arg
     call next_token
     test rax, rax
     jz .usage
-    mov rdi, rax
+    mov rsi, rax
+
+    mov rdi, rsi
+    call is_prompt_mode
+    test eax, eax
+    jnz .prompt_entry
+    mov rdi, rsi
+    call is_about_mode
+    test eax, eax
+    jnz .about_entry
+    mov rdi, rsi
     call parse_ip
     test eax, eax
     jz .usage
@@ -168,11 +301,12 @@ _start:
     mov rsi, rax
     cmp byte [rsi], '-'
     jne .arg_next
+
+    ; -p port|range|-
     cmp byte [rsi+1], 'p'
     jne .check_rate
     cmp byte [rsi+2], 0
     jne .check_rate
-
     mov rdi, rdx
     call next_token
     test rax, rax
@@ -195,17 +329,9 @@ _start:
     jmp .arg_next
 
 .check_rate:
-    cmp byte [rsi], '-'
-    jne .check_scan
     cmp byte [rsi+1], '-'
     jne .check_scan
-    cmp byte [rsi+2], 'r'
-    jne .check_scan
-    cmp byte [rsi+3], 'a'
-    jne .check_scan
-    cmp byte [rsi+4], 't'
-    jne .check_scan
-    cmp byte [rsi+5], 'e'
+    cmp dword [rsi+2], 'rate'
     jne .check_scan
     cmp byte [rsi+6], 0
     jne .check_scan
@@ -221,20 +347,12 @@ _start:
     jmp .arg_next
 
 .check_scan:
-    cmp byte [rsi], '-'
-    jne .check_stabilize
     cmp byte [rsi+1], '-'
-    jne .check_stabilize
-    cmp byte [rsi+2], 's'
-    jne .check_stabilize
-    cmp byte [rsi+3], 'c'
-    jne .check_stabilize
-    cmp byte [rsi+4], 'a'
-    jne .check_stabilize
-    cmp byte [rsi+5], 'n'
-    jne .check_stabilize
+    jne .check_bench
+    cmp dword [rsi+2], 'scan'
+    jne .check_bench
     cmp byte [rsi+6], 0
-    jne .check_stabilize
+    jne .check_bench
     mov rdi, rdx
     call next_token
     test rax, rax
@@ -246,54 +364,83 @@ _start:
     mov [scan_mode], al
     jmp .arg_next
 
+.check_bench:
+    cmp byte [rsi+1], '-'
+    jne .check_os
+    cmp dword [rsi+2], 'benc'
+    jne .check_os
+    cmp word  [rsi+6], 'h'
+    jne .check_os
+    cmp byte  [rsi+7], 0
+    jne .check_os
+    mov byte [bench_enabled], 1
+    jmp .arg_next
+
+.check_os:
+    cmp byte [rsi+1], '-'
+    jne .check_stabilize
+    cmp word  [rsi+2], 'os'
+    jne .check_stabilize
+    cmp byte  [rsi+4], 0
+    jne .check_stabilize
+    mov byte [os_enabled], 1
+    jmp .arg_next
+
 .check_stabilize:
-    cmp byte [rsi], '-'
-    jne .arg_next
     cmp byte [rsi+1], '-'
     jne .arg_next
-    cmp byte [rsi+2], 's'
+    cmp dword [rsi+2],  'stab'
     jne .arg_next
-    cmp byte [rsi+3], 't'
+    cmp dword [rsi+6],  'iliz'
     jne .arg_next
-    cmp byte [rsi+4], 'a'
+    cmp word  [rsi+10], 'e'
     jne .arg_next
-    cmp byte [rsi+5], 'b'
-    jne .arg_next
-    cmp byte [rsi+6], 'i'
-    jne .arg_next
-    cmp byte [rsi+7], 'l'
-    jne .arg_next
-    cmp byte [rsi+8], 'i'
-    jne .arg_next
-    cmp byte [rsi+9], 'z'
-    jne .arg_next
-    cmp byte [rsi+10], 'e'
-    jne .arg_next
-    cmp byte [rsi+11], 0
+    cmp byte  [rsi+11], 0
     jne .arg_next
     mov byte [stab_enabled], 1
-    jmp .arg_next
 
 .arg_next:
     mov rdi, rdx
     jmp .arg_loop
 
+; -------------------------------------------------------------------
+; All args parsed
+; -------------------------------------------------------------------
 .ports_ready:
     mov ax, [src_port]
     xchg al, ah
     mov [src_port_be], ax
-    mov byte [engine_id], ENGINE_SYN
+
+    cmp byte [scan_mode], 0
+    jne .scan_mode_set
     mov byte [scan_mode], SCAN_SYN
+.scan_mode_set:
+    mov byte [engine_id], ENGINE_SYN
+
+    cmp byte [prompt_mode], 0
+    jne .skip_banner
     lea rsi, [banner_msg]
     mov edx, banner_len
     call buf_write
+.skip_banner:
 
     call get_local_ip
     test eax, eax
     jnz .error
 
     call init_rate
+    call intel_init
 
+    ; Bench start
+    cmp byte [bench_enabled], 0
+    je .after_bench_start
+    rdtsc
+    shl rdx, 32
+    or rax, rdx
+    mov [bench_start_tsc], rax
+.after_bench_start:
+
+    ; Open raw socket
     sub rsp, 40
     mov ecx, AF_INET
     mov edx, SOCK_RAW
@@ -333,6 +480,9 @@ _start:
     movzx ecx, word [start_port]
     movzx r15d, word [end_port]
 
+; -------------------------------------------------------------------
+; Scan loop
+; -------------------------------------------------------------------
 .scan_loop:
     cmp ecx, r15d
     ja .scan_done
@@ -340,14 +490,19 @@ _start:
     mov ax, cx
     xchg al, ah
     mov [dst_port_be], ax
-    mov ax, [dst_port_be]
     call build_packet
-
+    call intel_rtt_start
     call rate_gate
+
+    ; TCP packet length
+    mov edx, 40
     sub rsp, 56
     mov rcx, [sock_fd]
     lea rdx, [packet_buf]
-    mov r8d, 40
+    ; rdx already set above - but sendto expects: rcx=sock,rdx=buf,r8=len,...
+    ; We need to reorganise: r8d = len, rdx=buf
+    mov r8d, edx                        ; len
+    lea rdx, [packet_buf]               ; buf (re-set)
     xor r9d, r9d
     lea rax, [sockaddr_dst]
     mov [rsp+32], rax
@@ -359,9 +514,9 @@ _start:
     cmp byte [stab_enabled], 0
     je .after_sent
     inc dword [stab_sent]
-
 .after_sent:
 
+    ; recvfrom (blocking, SO_RCVTIMEO = 1s)
     sub rsp, 56
     mov rcx, [sock_fd]
     lea rdx, [recv_buf]
@@ -375,6 +530,8 @@ _start:
     je .report_filtered
 
     lea rsi, [recv_buf]
+
+    ; TCP response decode
     mov al, [rsi+9]
     cmp al, 6
     jne .report_filtered
@@ -397,6 +554,12 @@ _start:
     mov ax, [rdx+14]
     xchg al, ah
     mov [last_win], ax
+    call intel_rtt_record
+    cmp byte [os_enabled], 0
+    je .classify_flags
+    call intel_analyze
+
+.classify_flags:
     mov al, [rdx+13]
     mov bl, al
     mov dl, [scan_mode]
@@ -406,8 +569,6 @@ _start:
     je .classify_ack
     cmp dl, SCAN_WINDOW
     je .classify_ack
-
-.classify_flag:
     test bl, 0x04
     jnz .report_closed
     jmp .report_filtered
@@ -430,17 +591,20 @@ _start:
     cmp byte [stab_enabled], 0
     je .open_no_stab
     inc dword [stab_recv]
-
 .open_no_stab:
     mov ax, cx
     call write_open_intel
+    cmp byte [os_enabled], 0
+    je .skip_intel_print
+    mov word [intel_port_cur], cx
+    call intel_print_record
+    .skip_intel_print:
     jmp .next_port
 
 .report_closed:
     cmp byte [stab_enabled], 0
     je .closed_no_stab
     inc dword [stab_recv]
-
 .closed_no_stab:
     mov ax, cx
     mov r9, closed_msg
@@ -452,13 +616,11 @@ _start:
     cmp byte [stab_enabled], 0
     je .filtered_no_stab
     inc dword [stab_timeout]
-
 .filtered_no_stab:
     mov ax, cx
     mov r9, filtered_msg
     mov r10d, filtered_len
     call write_result
-    jmp .next_port
 
 .next_port:
     call stabilize_step
@@ -466,7 +628,33 @@ _start:
     jmp .scan_loop
 
 .scan_done:
+    cmp byte [bench_enabled], 0
+    je .skip_bench_end
+    rdtsc
+    shl rdx, 32
+    or rax, rdx
+    mov [bench_end_tsc], rax
+.skip_bench_end:
     call write_summary
+    cmp byte [os_enabled], 0
+    je .skip_rtt_map
+    call intel_print_rtt_map
+    .skip_rtt_map:
+    cmp byte [bench_enabled], 0
+    je .skip_bench_print
+    call write_bench
+.skip_bench_print:
+    jmp .exit
+
+.prompt_entry:
+    mov byte [prompt_mode], 1
+    call prompt_flow
+    test eax, eax
+    jnz .exit
+    jmp .ports_ready
+
+.about_entry:
+    call print_about
     jmp .exit
 
 .usage:
@@ -490,17 +678,22 @@ _start:
     mov rcx, rax
     call closesocket
     add rsp, 40
-
 .cleanup:
     sub rsp, 40
     call WSACleanup
     add rsp, 40
-
     sub rsp, 40
     xor ecx, ecx
     call ExitProcess
 
-; rsi=buf, edx=len
+; ===========================================================================
+; Netx-ASM  |  Windows x86_64  |  Part 3 of 4: Output, OS FP, summary, bench
+; ===========================================================================
+
+; -------------------------------------------------------------------
+; write_stdout  rsi=buf, edx=len
+; Direct WriteFile to console stdout
+; -------------------------------------------------------------------
 write_stdout:
     sub rsp, 40
     mov rcx, [stdout_handle]
@@ -512,19 +705,21 @@ write_stdout:
     add rsp, 40
     ret
 
-; rsi=src, edx=len
+; -------------------------------------------------------------------
+; buf_write  rsi=src, edx=len
+; Buffered write (flushed at threshold)
+; -------------------------------------------------------------------
 buf_write:
     mov r8, rsi
-    mov r9, rdx
+    mov r9d, edx
     mov rax, [output_pos]
     mov rcx, rax
     add rcx, r9
     cmp rcx, OUTPUT_BUF_SIZE
-    ja .buf_flush
+    ja .flush_first
     cmp rcx, OUTPUT_FLUSH_THRESHOLD
-    jae .buf_flush
-
-.buf_write:
+    jae .flush_first
+.write_inner:
     lea rdi, [output_buf+rax]
     mov rsi, r8
     mov rdx, r9
@@ -533,31 +728,30 @@ buf_write:
     add rax, r9
     mov [output_pos], rax
     ret
-
-.buf_flush:
+.flush_first:
     call flush_output
     mov rax, [output_pos]
-    jmp .buf_write
+    jmp .write_inner
 
 flush_output:
     mov rax, [output_pos]
     test rax, rax
-    jz .flush_done
+    jz .done
     lea rsi, [output_buf]
     mov edx, eax
     call write_stdout
     mov qword [output_pos], 0
-
-.flush_done:
+.done:
     ret
 
-; inputs: ax=value
+; -------------------------------------------------------------------
+; append_u16  ax=value
+; -------------------------------------------------------------------
 append_u16:
     movzx eax, ax
     lea rsi, [out_buf+6]
     xor rcx, rcx
-
-.u16_digits:
+.digits:
     mov r8d, eax
     mov r11d, 0xCCCCCCCD
     mul r11d
@@ -571,13 +765,14 @@ append_u16:
     mov [rsi], r8b
     inc rcx
     test eax, eax
-    jnz .u16_digits
-
+    jnz .digits
     mov edx, ecx
     call buf_write
     ret
 
-; inputs: ax=port, r9=msg ptr, r10d=msg len
+; -------------------------------------------------------------------
+; write_result  ax=port, r9=msg_ptr, r10d=msg_len
+; -------------------------------------------------------------------
 write_result:
     call append_u16
     mov rsi, r9
@@ -585,7 +780,9 @@ write_result:
     call buf_write
     ret
 
-; inputs: ax=port
+; -------------------------------------------------------------------
+; write_open_intel  ax=port
+; -------------------------------------------------------------------
 write_open_intel:
     call append_u16
     lea rsi, [open_ttl_msg]
@@ -598,11 +795,34 @@ write_open_intel:
     call buf_write
     mov ax, [last_win]
     call append_u16
+    cmp byte [os_enabled], 0
+    je .no_os
+    lea rsi, [os_prefix_msg]
+    mov edx, os_prefix_len
+    call buf_write
+    movzx eax, byte [os_result_idx]
+    cmp eax, 6
+    jbe .os_ok
+    mov eax, 6
+.os_ok:
+    mov rsi, [os_str_ptrs + rax*8]
+    xor edx, edx
+.strlen:
+    cmp byte [rsi+rdx], 0
+    je .strlen_done
+    inc edx
+    jmp .strlen
+.strlen_done:
+    call buf_write
+.no_os:
     lea rsi, [newline_msg]
     mov edx, newline_len
     call buf_write
     ret
 
+; -------------------------------------------------------------------
+; record_open
+; -------------------------------------------------------------------
 record_open:
     mov eax, ecx
     dec eax
@@ -615,6 +835,9 @@ record_open:
     inc dword [open_count]
     ret
 
+; -------------------------------------------------------------------
+; write_summary
+; -------------------------------------------------------------------
 write_summary:
     lea rsi, [open_count_msg]
     mov edx, open_count_len
@@ -624,20 +847,17 @@ write_summary:
     lea rsi, [newline_msg]
     mov edx, newline_len
     call buf_write
-
     mov ax, [open_count]
     test ax, ax
-    jz .summary_none
-
+    jz .none
     lea rsi, [open_ports_msg]
     mov edx, open_ports_len
     call buf_write
     movzx ecx, word [start_port]
     movzx r15d, word [end_port]
-
-.summary_loop:
+.loop:
     cmp ecx, r15d
-    ja .summary_done
+    ja .done
     mov eax, ecx
     dec eax
     mov edx, eax
@@ -646,24 +866,21 @@ write_summary:
     mov r8b, 1
     shl r8b, dl
     test byte [result_map+rax], r8b
-    jz .summary_next
+    jz .next
     mov ax, cx
     call append_u16
     lea rsi, [space_msg]
     mov edx, space_len
     call buf_write
-
-.summary_next:
+.next:
     inc ecx
-    jmp .summary_loop
-
-.summary_done:
+    jmp .loop
+.done:
     lea rsi, [newline_msg]
     mov edx, newline_len
     call buf_write
     ret
-
-.summary_none:
+.none:
     lea rsi, [open_ports_msg]
     mov edx, open_ports_len
     call buf_write
@@ -675,72 +892,510 @@ write_summary:
     call buf_write
     ret
 
+; -------------------------------------------------------------------
+; write_bench
+; -------------------------------------------------------------------
+write_bench:
+    lea rsi, [bench_hdr_msg]
+    mov edx, bench_hdr_len
+    call buf_write
+    lea rsi, [bench_ports_msg]
+    mov edx, bench_ports_len
+    call buf_write
+    mov ax, [end_port]
+    mov bx, [start_port]
+    sub ax, bx
+    inc ax
+    call append_u16
+    lea rsi, [newline_msg]
+    mov edx, newline_len
+    call buf_write
+    lea rsi, [bench_open_msg]
+    mov edx, bench_open_len
+    call buf_write
+    mov ax, [open_count]
+    call append_u16
+    lea rsi, [newline_msg]
+    mov edx, newline_len
+    call buf_write
+    lea rsi, [bench_time_msg]
+    mov edx, bench_time_len
+    call buf_write
+    mov rax, [bench_end_tsc]
+    sub rax, [bench_start_tsc]
+    mov rcx, 1000
+    mul rcx
+    mov rcx, [tsc_hz]
+    test rcx, rcx
+    jz .no_time
+    div rcx
+    call append_u16
+    lea rsi, [newline_msg]
+    mov edx, newline_len
+    call buf_write
+.no_time:
+    lea rsi, [bench_end_msg]
+    mov edx, bench_end_len
+    call buf_write
+    ret
+
+; -------------------------------------------------------------------
+; fingerprint_os  (same scoring as Linux version)
+; -------------------------------------------------------------------
+fingerprint_os:
+    push rbx
+    push r12
+    push r13
+    movzx r12d, byte [last_ttl]
+    movzx r13d, word [last_win]
+    xor ebx, ebx
+    cmp r12d, 70
+    jbe .ttl_done
+    mov ebx, 1
+    cmp r12d, 130
+    jbe .ttl_done
+    mov ebx, 2
+.ttl_done:
+    xor eax, eax
+    mov byte [os_result_idx], 6
+
+    ; Linux 5.x/6.x
+    xor ecx, ecx
+    cmp r13d, 64240
+    jne .l5b
+    inc ecx
+.l5b:
+    cmp r13d, 29200
+    jne .l5s
+    inc ecx
+.l5s:
+    test ebx, ebx
+    jnz .l5e
+    inc ecx
+    cmp ecx, eax
+    jbe .l5e
+    mov eax, ecx
+    mov byte [os_result_idx], 0
+.l5e:
+    ; Linux 3.x/4.x
+    xor ecx, ecx
+    cmp r13d, 29200
+    je .l3w
+    cmp r13d, 65535
+    jne .l3s
+.l3w:
+    inc ecx
+.l3s:
+    test ebx, ebx
+    jnz .l3e
+    inc ecx
+    cmp ecx, eax
+    jbe .l3e
+    mov eax, ecx
+    mov byte [os_result_idx], 1
+.l3e:
+    ; Windows 10/11
+    xor ecx, ecx
+    cmp r13d, 65535
+    je .w10w
+    cmp r13d, 64240
+    jne .w10s
+.w10w:
+    inc ecx
+.w10s:
+    cmp ebx, 1
+    jne .w10e
+    inc ecx
+    cmp ecx, eax
+    jbe .w10e
+    mov eax, ecx
+    mov byte [os_result_idx], 2
+.w10e:
+    ; Windows 7/8
+    xor ecx, ecx
+    cmp r13d, 8192
+    je .w7w
+    cmp r13d, 16384
+    jne .w7s
+.w7w:
+    inc ecx
+.w7s:
+    cmp ebx, 1
+    jne .w7e
+    inc ecx
+    cmp ecx, eax
+    jbe .w7e
+    mov eax, ecx
+    mov byte [os_result_idx], 3
+.w7e:
+    ; macOS/BSD
+    xor ecx, ecx
+    cmp r13d, 65228
+    je .mw
+    cmp r13d, 65535
+    jne .ms
+.mw:
+    inc ecx
+.ms:
+    test ebx, ebx
+    jnz .me
+    inc ecx
+    cmp ecx, eax
+    jbe .me
+    mov eax, ecx
+    mov byte [os_result_idx], 4
+.me:
+    ; Network device
+    xor ecx, ecx
+    cmp ebx, 2
+    jne .de
+    add ecx, 2
+    cmp ecx, eax
+    jbe .de
+    mov byte [os_result_idx], 5
+.de:
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+; -------------------------------------------------------------------
+; print_about
+; -------------------------------------------------------------------
+print_about:
+    lea rsi, [banner_msg]
+    mov edx, banner_len
+    call write_stdout
+    lea rsi, [about_msg]
+    mov edx, about_len
+    call write_stdout
+    ret
+
+; -------------------------------------------------------------------
+; is_prompt_mode  rdi -> eax=1 if "--prompt-mode"
+; -------------------------------------------------------------------
+is_prompt_mode:
+    cmp dword [rdi],    '--pr'
+    jne .no
+    cmp dword [rdi+4],  'ompt'
+    jne .no
+    cmp dword [rdi+8],  '-mod'
+    jne .no
+    cmp byte  [rdi+12], 'e'
+    jne .no
+    cmp byte  [rdi+13], 0
+    jne .no
+    mov eax, 1
+    ret
+.no:
+    xor eax, eax
+    ret
+
+; -------------------------------------------------------------------
+; is_about_mode  rdi -> eax=1 if "--about"
+; -------------------------------------------------------------------
+is_about_mode:
+    cmp dword [rdi],   '--ab'
+    jne .no
+    cmp dword [rdi+4], 'out'
+    jne .no
+    cmp byte  [rdi+6], 0
+    jne .no
+    mov eax, 1
+    ret
+.no:
+    xor eax, eax
+    ret
+
+; -------------------------------------------------------------------
+; prompt_flow  (Windows version uses WriteFile/ReadFile)
+; Returns eax=0 ok, 1 fail
+; -------------------------------------------------------------------
+prompt_flow:
+    call print_about
+    lea rsi, [prompt_intro]
+    mov edx, prompt_intro_len
+    call write_stdout
+
+    lea rsi, [prompt_target]
+    mov edx, prompt_target_len
+    lea rdi, [input_buf]
+    mov ecx, 256
+    call prompt_read_line
+    test eax, eax
+    jz .fail
+    lea rdi, [input_buf]
+    call parse_ip
+    test eax, eax
+    jz .fail
+    mov [target_ip], eax
+
+    lea rsi, [prompt_ports]
+    mov edx, prompt_ports_len
+    lea rdi, [input_buf]
+    mov ecx, 256
+    call prompt_read_line
+    test eax, eax
+    jz .ports_ok
+    cmp byte [input_buf], '-'
+    jne .ports_parse
+    cmp byte [input_buf+1], 0
+    jne .ports_parse
+    mov word [start_port], 1
+    mov word [end_port], 65535
+    jmp .ports_ok
+.ports_parse:
+    lea rdi, [input_buf]
+    call parse_port_range
+    test ax, ax
+    jz .fail
+    mov [start_port], ax
+    mov [end_port], dx
+.ports_ok:
+
+    lea rsi, [prompt_scan]
+    mov edx, prompt_scan_len
+    lea rdi, [input_buf]
+    mov ecx, 256
+    call prompt_read_line
+    test eax, eax
+    jz .scan_ok
+    lea rdi, [input_buf]
+    call parse_scan_mode
+    test al, al
+    jz .fail
+    mov [scan_mode], al
+.scan_ok:
+
+    lea rsi, [prompt_rate]
+    mov edx, prompt_rate_len
+    lea rdi, [input_buf]
+    mov ecx, 256
+    call prompt_read_line
+    test eax, eax
+    jz .rate_ok
+    lea rdi, [input_buf]
+    call parse_u32
+    test eax, eax
+    jz .fail
+    mov [rate_value], eax
+.rate_ok:
+
+    lea rsi, [prompt_stab]
+    mov edx, prompt_stab_len
+    lea rdi, [input_buf]
+    mov ecx, 256
+    call prompt_read_line
+    test eax, eax
+    jz .stab_ok
+    mov al, [input_buf]
+    or al, 0x20
+    cmp al, 'y'
+    jne .stab_ok
+    mov byte [stab_enabled], 1
+.stab_ok:
+    xor eax, eax
+    ret
+.fail:
+    lea rsi, [prompt_invalid]
+    mov edx, prompt_invalid_len
+    call write_stdout
+    mov eax, 1
+    ret
+
+; -------------------------------------------------------------------
+; prompt_read_line  rsi=prompt, edx=len, rdi=buf, ecx=bufsize
+; Returns eax=1 non-empty, 0 empty/error
+; -------------------------------------------------------------------
+prompt_read_line:
+    push rbx
+    mov rbx, rdi
+    mov r10d, ecx
+    call write_stdout
+    dec r10d
+    sub rsp, 40
+    mov rcx, [stdin_handle]
+    mov rdx, rbx
+    mov r8d, r10d
+    lea r9, [bytes_read]
+    mov qword [rsp+32], 0
+    call ReadFile
+    add rsp, 40
+    test eax, eax
+    jz .none
+    mov eax, [bytes_read]
+    test eax, eax
+    jz .none
+    mov ecx, eax
+    mov byte [rbx+rcx], 0
+    mov rdi, rbx
+    call trim_line
+    mov al, [rbx]
+    test al, al
+    setnz al
+    movzx eax, al
+    pop rbx
+    ret
+.none:
+    mov byte [rbx], 0
+    xor eax, eax
+    pop rbx
+    ret
+
+; -------------------------------------------------------------------
+; trim_line  rdi=buf
+; -------------------------------------------------------------------
+trim_line:
+    mov al, [rdi]
+    test al, al
+    jz .done
+    cmp al, 10
+    je .term
+    cmp al, 13
+    je .term
+    inc rdi
+    jmp trim_line
+.term:
+    mov byte [rdi], 0
+.done:
+    ret
+
+; ===========================================================================
+; Netx-ASM  |  Windows x86_64  |  Part 4 of 4: Rate, stabilize, helpers, TSC
+; ===========================================================================
+
+; -------------------------------------------------------------------
+; intelligence_gate
+; -------------------------------------------------------------------
+intelligence_gate:
+    call rate_gate
+    ret
+
+; -------------------------------------------------------------------
+; rate_gate  -  RDTSC-based packet rate limiter
+; -------------------------------------------------------------------
 rate_gate:
     cmp byte [rate_enabled], 0
-    je .rate_done
+    je .done
     rdtsc
     shl rdx, 32
     or rax, rdx
     mov r8, [last_send_tsc]
     test r8, r8
-    jz .rate_store
-
-.rate_wait:
+    jz .store
+.wait:
     mov r9, rax
     sub r9, r8
     cmp r9, [rate_cycles]
-    jae .rate_store
+    jae .store
     rdtsc
     shl rdx, 32
     or rax, rdx
-    jmp .rate_wait
-
-.rate_store:
+    jmp .wait
+.store:
     mov [last_send_tsc], rax
-
-.rate_done:
+.done:
     ret
 
+; -------------------------------------------------------------------
+; get_local_ip
+; Returns eax=0 ok, 1 fail
+; -------------------------------------------------------------------
+get_local_ip:
+    push rbx
+    sub rsp, 40
+    mov ecx, AF_INET
+    mov edx, SOCK_DGRAM
+    mov r8d, IPPROTO_UDP
+    call socket
+    add rsp, 40
+    cmp rax, INVALID_SOCKET
+    je .fail
+    mov rbx, rax
+
+    mov word [sockaddr_tmp], AF_INET
+    mov word [sockaddr_tmp+2], 0x3500
+    mov eax, [target_ip]
+    mov [sockaddr_tmp+4], eax
+
+    sub rsp, 40
+    mov rcx, rbx
+    lea rdx, [sockaddr_tmp]
+    mov r8d, 16
+    call connect
+    add rsp, 40
+    test eax, eax
+    jne .cleanup
+
+    mov dword [addrlen], 16
+    sub rsp, 40
+    mov rcx, rbx
+    lea rdx, [sockaddr_local]
+    lea r8, [addrlen]
+    call getsockname
+    add rsp, 40
+    test eax, eax
+    jne .cleanup
+
+    mov eax, [sockaddr_local+4]
+    mov [source_ip], eax
+
+    sub rsp, 40
+    mov rcx, rbx
+    call closesocket
+    add rsp, 40
+    pop rbx
+    xor eax, eax
+    ret
+
+.cleanup:
+    sub rsp, 40
+    mov rcx, rbx
+    call closesocket
+    add rsp, 40
+.fail:
+    pop rbx
+    mov eax, 1
+    ret
+
+; -------------------------------------------------------------------
+; stabilize_step
+; -------------------------------------------------------------------
 stabilize_step:
     cmp byte [stab_enabled], 0
-    je .stab_done
+    je .done
     cmp byte [rate_enabled], 0
-    je .stab_done
+    je .done
     push rcx
     mov eax, [stab_sent]
     test eax, eax
-    jz .stab_restore
+    jz .restore
     xor edx, edx
     mov ecx, 128
     div ecx
     test edx, edx
-    jne .stab_restore
+    jne .restore
     mov eax, [stab_timeout]
     mov ecx, [stab_recv]
     lea edx, [ecx*2]
     cmp eax, edx
-    ja .stab_slow
+    ja .slow
     lea edx, [eax*2]
     cmp ecx, edx
-    ja .stab_fast
-    jmp .stab_reset
-
-.stab_slow:
+    ja .fast
+    jmp .reset
+.slow:
     call slow_down
-    jmp .stab_reset
-
-.stab_fast:
+    jmp .reset
+.fast:
     call speed_up
-
-.stab_reset:
+.reset:
     mov dword [stab_sent], 0
     mov dword [stab_recv], 0
     mov dword [stab_timeout], 0
-
-.stab_restore:
+.restore:
     pop rcx
-
-.stab_done:
+.done:
     ret
 
 slow_down:
@@ -750,12 +1405,11 @@ slow_down:
     add rax, rcx
     mov rdx, [rate_max_cycles]
     test rdx, rdx
-    jz .slow_store
+    jz .store
     cmp rax, rdx
-    jbe .slow_store
+    jbe .store
     mov rax, rdx
-
-.slow_store:
+.store:
     mov [rate_cycles], rax
     ret
 
@@ -766,25 +1420,26 @@ speed_up:
     sub rax, rcx
     mov rdx, [rate_min_cycles]
     test rdx, rdx
-    jz .fast_store
+    jz .store
     cmp rax, rdx
-    jae .fast_store
+    jae .store
     mov rax, rdx
-
-.fast_store:
+.store:
     mov [rate_cycles], rax
     ret
 
+; -------------------------------------------------------------------
+; init_rate
+; -------------------------------------------------------------------
 init_rate:
     mov eax, [rate_value]
     test eax, eax
-    jnz .init_rate_do
+    jnz .do
     cmp byte [stab_enabled], 0
-    je .init_rate_done
+    je .done
     mov dword [rate_value], 200000
     mov eax, [rate_value]
-
-.init_rate_do:
+.do:
     call calibrate_tsc
     mov ecx, [rate_value]
     mov rax, [tsc_hz]
@@ -793,7 +1448,7 @@ init_rate:
     mov [rate_cycles], rax
     mov byte [rate_enabled], 1
     cmp byte [stab_enabled], 0
-    je .init_rate_done
+    je .done
     mov rax, [rate_cycles]
     mov rcx, rax
     shl rcx, 2
@@ -801,17 +1456,19 @@ init_rate:
     mov rcx, rax
     shr rcx, 2
     mov [rate_min_cycles], rcx
-
-.init_rate_done:
+.done:
     ret
 
+; -------------------------------------------------------------------
+; calibrate_tsc
+; -------------------------------------------------------------------
 calibrate_tsc:
     sub rsp, 40
     lea rcx, [qpc_freq]
     call QueryPerformanceFrequency
     add rsp, 40
     test eax, eax
-    jz .calib_done
+    jz .done
 
     sub rsp, 40
     lea rcx, [qpc_start]
@@ -828,7 +1485,7 @@ calibrate_tsc:
     div r10
     mov r11, rax
 
-.calib_loop:
+.loop:
     sub rsp, 40
     lea rcx, [qpc_end]
     call QueryPerformanceCounter
@@ -836,7 +1493,7 @@ calibrate_tsc:
     mov rax, [qpc_end]
     sub rax, [qpc_start]
     cmp rax, r11
-    jb .calib_loop
+    jb .loop
     mov r8, rax
 
     rdtsc
@@ -850,13 +1507,17 @@ calibrate_tsc:
     mov rcx, r8
     div rcx
     mov [tsc_hz], rax
-
-.calib_done:
+.done:
     ret
 
-; rdi -> command line string
-; returns rax=token start or 0, rdx=next position
+; -------------------------------------------------------------------
+; next_token  rdi=command-line string
+; Splits on spaces, handles "quoted tokens"
+; Returns rax=token_start (null-terminated in place), rdx=next_pos
+; Returns rax=0 if no more tokens
+; -------------------------------------------------------------------
 next_token:
+    ; Skip leading spaces
 .skip:
     mov al, [rdi]
     cmp al, 0
@@ -868,106 +1529,46 @@ next_token:
 
 .start:
     cmp al, '"'
-    jne .noquote
+    jne .no_quote
+    ; Quoted token: skip opening quote, scan to closing quote
     inc rdi
     mov rax, rdi
-
-.scan_quote:
+.scan_quoted:
     mov al, [rdi]
     cmp al, 0
-    je .done_quote
+    je .quoted_eos
     cmp al, '"'
-    je .term_quote
+    je .quoted_end
     inc rdi
-    jmp .scan_quote
-
-.term_quote:
+    jmp .scan_quoted
+.quoted_end:
     mov byte [rdi], 0
     inc rdi
     mov rdx, rdi
     ret
-
-.done_quote:
+.quoted_eos:
     mov rdx, rdi
     ret
 
-.noquote:
+.no_quote:
+    ; Unquoted token: scan to space or end
     mov rax, rdi
-
 .scan:
     mov al, [rdi]
     cmp al, 0
-    je .done
+    je .eos
     cmp al, ' '
-    je .term
+    je .token_end
     inc rdi
     jmp .scan
-
-.term:
+.token_end:
     mov byte [rdi], 0
     inc rdi
-
-.done:
+.eos:
     mov rdx, rdi
     ret
 
 .none:
     xor eax, eax
     mov rdx, rdi
-    ret
-
-; returns eax=0 on success
-get_local_ip:
-    sub rsp, 40
-    mov ecx, AF_INET
-    mov edx, SOCK_DGRAM
-    mov r8d, IPPROTO_UDP
-    call socket
-    add rsp, 40
-    cmp rax, INVALID_SOCKET
-    je .get_ip_fail
-    mov rbx, rax
-
-    mov word [sockaddr_tmp], AF_INET
-    mov word [sockaddr_tmp+2], 0x3500
-    mov eax, [target_ip]
-    mov [sockaddr_tmp+4], eax
-
-    sub rsp, 40
-    mov rcx, rbx
-    lea rdx, [sockaddr_tmp]
-    mov r8d, 16
-    call connect
-    add rsp, 40
-    test eax, eax
-    jne .get_ip_cleanup_fail
-
-    mov dword [addrlen], 16
-    sub rsp, 40
-    mov rcx, rbx
-    lea rdx, [sockaddr_local]
-    lea r8, [addrlen]
-    call getsockname
-    add rsp, 40
-    test eax, eax
-    jne .get_ip_cleanup_fail
-
-    mov eax, [sockaddr_local+4]
-    mov [source_ip], eax
-
-    sub rsp, 40
-    mov rcx, rbx
-    call closesocket
-    add rsp, 40
-    xor eax, eax
-    ret
-
-.get_ip_cleanup_fail:
-    sub rsp, 40
-    mov rcx, rbx
-    call closesocket
-    add rsp, 40
-
-.get_ip_fail:
-    mov eax, 1
     ret
