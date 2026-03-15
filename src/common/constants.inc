@@ -51,6 +51,9 @@
 %define SOL_SOCKET          1
 %define SO_RCVTIMEO         20
 %define MSG_MORE            0x8000
+%define O_WRONLY            1
+%define O_CREAT             64
+%define O_TRUNC             512
 
 ; ============================================================
 ; Ethernet protocol numbers (host and network byte order)
@@ -101,5 +104,33 @@
 ; ICMP codes (used with ICMP_DEST_UNREACH)
 ; ============================================================
 %define ICMP_PORT_UNREACH   3
+
+; ============================================================
+; Execution engine mode constants
+; ============================================================
+%define ENGINE_MODE_SEQ       1
+%define ENGINE_MODE_ASYNC     2
+%define ENGINE_MODE_PARALLEL  3
+%define ENGINE_MODE_THREADED  4
+%define ENGINE_MODE_SCHED     5
+%define ENGINE_MODE_PIPELINE  6
+%define ENGINE_MODE_BATCH     7
+%define ENGINE_MODE_HYBRID    8
+
+; ============================================================
+; Async engine constants
+; ============================================================
+%define ASYNC_BURST           64
+%define ASYNC_RECV_MAX        32
+
+; ============================================================
+; Pipeline engine constants
+; ============================================================
+%define PIPELINE_MAX_DEPTH    512
+
+; ============================================================
+; In-flight tracker constants
+; ============================================================
+%define INFLIGHT_SIZE         512
 
 %endif

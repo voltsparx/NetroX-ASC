@@ -156,6 +156,79 @@ parse_port_range:
     ret
 
 ; ------------------------------------------------------------
+; parse_port_list
+; Input:  rdi -> "N,N,N" or "N" or "N-M"
+; Output: fills port_list_buf (word each), sets port_list_count
+; If no comma found: falls through to parse_port_range
+; ------------------------------------------------------------
+parse_port_list:
+    push rbx
+    push r12
+    push r13
+    mov r12, rdi
+    xor r13d, r13d                 ; comma_found = 0
+.scan_commas:
+    mov al, [rdi]
+    test al, al
+    jz .no_comma
+    cmp al, ','
+    jne .scan_next
+    mov r13d, 1
+    jmp .comma_found
+.scan_next:
+    inc rdi
+    jmp .scan_commas
+.no_comma:
+    pop r13
+    pop r12
+    pop rbx
+    jmp parse_port_range
+.comma_found:
+    mov rdi, r12
+    xor rcx, rcx                   ; count
+    lea rbx, [port_list_buf]
+.token_loop:
+    ; terminate token at comma or end
+    mov rsi, rdi
+.find_end:
+    mov al, [rsi]
+    test al, al
+    jz .end_token
+    cmp al, ','
+    je .end_token
+    inc rsi
+    jmp .find_end
+.end_token:
+    mov dl, [rsi]
+    mov byte [rsi], 0
+    call parse_port
+    mov byte [rsi], dl
+    test ax, ax
+    jz .invalid
+    mov [rbx], ax
+    add rbx, 2
+    inc rcx
+    cmp rcx, 256
+    jae .invalid
+    test dl, dl
+    jz .done
+    lea rdi, [rsi+1]
+    jmp .token_loop
+.done:
+    mov [port_list_count], cx
+    pop r13
+    pop r12
+    pop rbx
+    ret
+.invalid:
+    xor ax, ax
+    mov [port_list_count], ax
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+; ------------------------------------------------------------
 ; parse_u32
 ; Input:  rdi -> null-terminated decimal string
 ; Output: eax = value, or 0 on error

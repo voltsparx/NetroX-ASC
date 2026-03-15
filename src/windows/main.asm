@@ -21,6 +21,8 @@ extern QueryPerformanceCounter
 extern QueryPerformanceFrequency
 extern ReadFile
 extern WriteFile
+extern CreateFileA
+extern CloseHandle
 extern ExitProcess
 
 %include "../common/parse.inc"
@@ -175,6 +177,62 @@ wiz_mode_ptrs   dq 0
 ; Target IP string buffer for summary display
 wiz_target_str  db "               ", 0  ; 16 bytes, filled at runtime
 
+disc_up_msg     db " UP   TTL=", 0
+disc_up_len     equ $-disc_up_msg
+disc_rtt_msg    db " RTT=", 0
+disc_rtt_len    equ $-disc_rtt_msg
+disc_ms_msg     db "ms", 13, 10, 0
+disc_ms_len     equ $-disc_ms_msg
+disc_down_msg   db " DOWN", 13, 10, 0
+disc_down_len   equ $-disc_down_msg
+disc_hdr_msg    db "--- Host Discovery ---", 13, 10, 0
+disc_hdr_len    equ $-disc_hdr_msg
+
+timing_t0_rate  dd 0
+timing_t1_rate  dd 3
+timing_t2_rate  dd 10
+timing_t3_rate  dd 0
+timing_t4_rate  dd 100000
+timing_t5_rate  dd 0
+
+json_open_brace   db "{", 13, 10
+json_open_len     equ $-json_open_brace
+json_close_brace  db "}", 13, 10
+json_close_len    equ $-json_close_brace
+json_target_key   db "  \"target\": \""
+json_target_klen  equ $-json_target_key
+json_target_end   db "\"", 13, 10
+json_target_elen  equ $-json_target_end
+json_ports_key    db "  \"ports\": [", 13, 10
+json_ports_klen   equ $-json_ports_key
+json_port_open    db "    {\"port\": "
+json_port_oplen   equ $-json_port_open
+json_state_open   db ", \"state\": \"open\""
+json_state_oplen  equ $-json_state_open
+json_state_closed db ", \"state\": \"closed\""
+json_state_clen   equ $-json_state_closed
+json_state_filt   db ", \"state\": \"filtered\""
+json_state_flen   equ $-json_state_filt
+json_ttl_key      db ", \"ttl\": "
+json_ttl_klen     equ $-json_ttl_key
+json_close_obj    db "},"
+json_close_olen   equ $-json_close_obj
+json_ports_end    db "  ]", 13, 10
+json_ports_elen   equ $-json_ports_end
+json_comma_nl     db ",", 13, 10
+json_comma_nl_len equ $-json_comma_nl
+
+csv_header      db "ip,port,state,ttl,rtt_us,os", 13, 10
+csv_header_len  equ $-csv_header
+csv_open_str    db ",open,"
+csv_open_len    equ $-csv_open_str
+csv_closed_str  db ",closed,"
+csv_closed_len  equ $-csv_closed_str
+csv_filt_str    db ",filtered,"
+csv_filt_len    equ $-csv_filt_str
+csv_comma       db ","
+csv_comma_len   equ $-csv_comma
+
 closed_msg      db " CLOSED", 13, 10
 closed_len      equ $-closed_msg
 filtered_msg    db " FILTERED", 13, 10
@@ -238,6 +296,37 @@ pkt_template_2  db 0x00,0x00,0x00,0x00,0x50,0x02,0xFF,0xFF
                 db 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
 align 8
 flag_table      db 0x02,0x02,0x10,0x01,0x00,0x29,0x10,0x11,0x00,0x00
+
+; ---------------------------------------------------------------------------
+; .rodata
+; ---------------------------------------------------------------------------
+SECTION .rodata
+
+; Top 100 most commonly open TCP ports (frequency-ranked)
+top_100_ports:
+    dw 80,  23,  443, 21,  22,  25,  3389, 110, 445, 139
+    dw 143, 53,  135, 3306,8080,1723,111,  995, 993, 5900
+    dw 1025,587, 8888,199, 1720,465, 548,  113, 81,  6001
+    dw 10000,514,5432,1433,3306,1521,49152,514, 8443,5000
+    dw 5901, 102,10001,8008,2082,8443,4443, 7547,623, 161
+    dw 6443, 9100,631, 9000,3000,8888,8161, 9090,7001,8009
+    dw 4848, 4786,32764,2375,2376,9200,5984, 11211,6379,27017
+    dw 2181, 9092,8500,5672,4369,15672,61616,9300,7474,7473
+    dw 1194, 500, 1701,4500,1900,5353,17185, 5683,49153,49154
+    dw 49155,49156,49157,49158,49159,49160,49161,49162,49163,49164
+top_100_count equ 100
+
+; Top 1000 — first 100 same as above, add 900 more common ports
+top_1000_ports:
+    ; include top_100_ports then continue with:
+    dw 7,   9,   13,  17,  19,  37,  79,  88,  106, 109
+    dw 115, 118, 119, 123, 137, 138, 139, 143, 179, 194
+    dw 220, 389, 427, 443, 444, 458, 464, 465, 497, 500
+    dw 512, 513, 515, 520, 548, 554, 587, 593, 601, 631
+    dw 636, 646, 787, 808, 873, 902, 903, 993, 995, 1000
+    dw 1022,1023,1024,1025,1026,1027,1028,1029,1030,1720
+    ; ... extend to 1000 entries total
+top_1000_count equ 1000
 
 ; ---------------------------------------------------------------------------
 ; .bss
@@ -333,6 +422,30 @@ xorshift_state      resq 1
 input_buf           resb 256
 prompt_mode         resb 1
 wiz_any_flag        resb 1
+blackrock_key_0     resq 1
+blackrock_key_1     resq 1
+blackrock_key_2     resq 1
+blackrock_key_3     resq 1
+blackrock_key_4     resq 1
+blackrock_key_5     resq 1
+host_up_map         resb 1
+disc_enabled        resb 1
+disc_mode           resb 1
+port_list_buf       resw 256
+port_list_count     resw 1
+port_list_mode      resb 1
+top_ports_n         resw 1
+top_ports_mode      resb 1
+top_ports_ptr       resq 1
+timing_level        resb 1
+scan_delay          resd 1
+retry_max           resb 1
+retry_cur           resb 1
+json_mode           resb 1
+json_first_port     resb 1
+csv_mode            resb 1
+output_fd           resq 1
+output_filename     resb 256
 
 ; ===========================================================================
 ; NetroX-ASM  |  Windows x86_64  |  Part 2 of 4: _start, args, init, scan loop
@@ -400,6 +513,19 @@ _start:
     test eax, eax
     jz .usage
     mov [target_ip], eax
+    lea rsi, [rsi]
+    lea rdi, [wiz_target_str]
+    mov ecx, 15
+.copy_target_ip:
+    mov al, [rsi]
+    mov [rdi], al
+    test al, al
+    jz .target_ip_copied
+    inc rsi
+    inc rdi
+    loop .copy_target_ip
+    mov byte [rdi], 0
+.target_ip_copied:
 
     mov rdi, rdx
 
@@ -411,6 +537,48 @@ _start:
     cmp byte [rsi], '-'
     jne .arg_next
 
+    ; -T<0-5>
+    cmp byte [rsi+1], 'T'
+    jne .check_p
+    mov al, [rsi+2]
+    cmp al, '0'
+    jb .check_p
+    cmp al, '5'
+    ja .check_p
+    sub al, '0'
+    mov [timing_level], al
+    cmp al, 0
+    jne .t1
+    mov dword [rate_value], 0
+    mov dword [scan_delay], 15000
+    jmp .arg_next
+.t1:
+    cmp al, 1
+    jne .t2
+    mov dword [rate_value], 3
+    jmp .arg_next
+.t2:
+    cmp al, 2
+    jne .t3
+    mov dword [rate_value], 10
+    jmp .arg_next
+.t3:
+    cmp al, 3
+    jne .t4
+    mov dword [rate_value], 0
+    jmp .arg_next
+.t4:
+    cmp al, 4
+    jne .t5
+    mov dword [rate_value], 100000
+    mov byte [stab_enabled], 0
+    jmp .arg_next
+.t5:
+    mov dword [rate_value], 0
+    mov byte [stab_enabled], 0
+    jmp .arg_next
+
+.check_p:
     ; -p port|range|-
     cmp byte [rsi+1], 'p'
     jne .check_rate
@@ -421,6 +589,26 @@ _start:
     test rax, rax
     jz .usage
     mov rdi, rax
+    ; comma list?
+    push rdi
+    mov rsi, rdi
+.plist_scan:
+    mov al, [rsi]
+    test al, al
+    jz .plist_no
+    cmp al, ','
+    je .plist_yes
+    inc rsi
+    jmp .plist_scan
+.plist_yes:
+    pop rdi
+    call parse_port_list
+    cmp word [port_list_count], 0
+    je .usage
+    mov byte [port_list_mode], 1
+    jmp .arg_next
+.plist_no:
+    pop rdi
     cmp byte [rdi], '-'
     jne .parse_range
     cmp byte [rdi+1], 0
@@ -457,11 +645,11 @@ _start:
 
 .check_scan:
     cmp byte [rsi+1], '-'
-    jne .check_bench
+    jne .check_discovery
     cmp dword [rsi+2], 'scan'
-    jne .check_bench
+    jne .check_discovery
     cmp byte [rsi+6], 0
-    jne .check_bench
+    jne .check_discovery
     mov rdi, rdx
     call next_token
     test rax, rax
@@ -471,6 +659,185 @@ _start:
     test al, al
     jz .usage
     mov [scan_mode], al
+    jmp .arg_next
+
+.check_discovery:
+    ; --discovery MODE
+    cmp byte [rsi+1], '-'
+    jne .check_top_ports
+    cmp dword [rsi+2], 'disc'
+    jne .check_top_ports
+    cmp dword [rsi+6], 'over'
+    jne .check_top_ports
+    cmp byte [rsi+10], 'y'
+    jne .check_top_ports
+    cmp byte [rsi+11], 0
+    jne .check_top_ports
+    mov rdi, rdx
+    call next_token
+    test rax, rax
+    jz .usage
+    mov rdi, rax
+    mov byte [disc_enabled], 1
+    mov byte [disc_mode], 1
+    mov al, [rdi]
+    cmp al, 's'
+    jne .disc_ack
+    cmp byte [rdi+1], 'y'
+    jne .disc_ack
+    cmp byte [rdi+2], 'n'
+    jne .disc_ack
+    cmp byte [rdi+3], 0
+    jne .disc_ack
+    mov byte [disc_mode], 2
+    jmp .arg_next
+.disc_ack:
+    cmp al, 'a'
+    jne .disc_udp
+    cmp byte [rdi+1], 'c'
+    jne .disc_udp
+    cmp byte [rdi+2], 'k'
+    jne .disc_udp
+    cmp byte [rdi+3], 0
+    jne .disc_udp
+    mov byte [disc_mode], 3
+    jmp .arg_next
+.disc_udp:
+    cmp al, 'u'
+    jne .disc_ping
+    cmp byte [rdi+1], 'd'
+    jne .disc_ping
+    cmp byte [rdi+2], 'p'
+    jne .disc_ping
+    cmp byte [rdi+3], 0
+    jne .disc_ping
+    mov byte [disc_mode], 4
+    jmp .arg_next
+.disc_ping:
+    jmp .arg_next
+
+.check_top_ports:
+    ; --top-ports N
+    cmp byte [rsi+1], '-'
+    jne .check_json
+    cmp dword [rsi+2], 'top-'
+    jne .check_json
+    cmp dword [rsi+6], 'port'
+    jne .check_json
+    cmp byte [rsi+10], 's'
+    jne .check_json
+    cmp byte [rsi+11], 0
+    jne .check_json
+    mov rdi, rdx
+    call next_token
+    test rax, rax
+    jz .usage
+    mov rdi, rax
+    call parse_u32
+    test eax, eax
+    jz .usage
+    mov [top_ports_n], ax
+    cmp eax, 100
+    jbe .top100
+    cmp eax, 1000
+    jbe .top1000
+    jmp .usage
+.top100:
+    lea rax, [top_100_ports]
+    mov [top_ports_ptr], rax
+    mov byte [top_ports_mode], 1
+    jmp .arg_next
+.top1000:
+    lea rax, [top_1000_ports]
+    mov [top_ports_ptr], rax
+    mov byte [top_ports_mode], 1
+    jmp .arg_next
+
+.check_json:
+    ; --json
+    cmp byte [rsi+1], '-'
+    jne .check_csv
+    cmp dword [rsi+2], 'json'
+    jne .check_csv
+    cmp byte [rsi+6], 0
+    jne .check_csv
+    mov byte [json_mode], 1
+    mov byte [json_first_port], 1
+    jmp .arg_next
+
+.check_csv:
+    ; --csv
+    cmp byte [rsi+1], '-'
+    jne .check_output
+    cmp dword [rsi+2], 'csv'
+    jne .check_output
+    cmp byte [rsi+5], 0
+    jne .check_output
+    mov byte [csv_mode], 1
+    jmp .arg_next
+
+.check_output:
+    ; --output FILE
+    cmp byte [rsi+1], '-'
+    jne .check_retries
+    cmp dword [rsi+2], 'outp'
+    jne .check_retries
+    cmp dword [rsi+6], 'ut'
+    jne .check_retries
+    cmp byte [rsi+8], 0
+    jne .check_retries
+    mov rdi, rdx
+    call next_token
+    test rax, rax
+    jz .usage
+    mov rsi, rax
+    lea rdi, [output_filename]
+    mov ecx, 255
+.out_copy:
+    mov al, [rsi]
+    mov [rdi], al
+    test al, al
+    jz .out_open
+    inc rsi
+    inc rdi
+    loop .out_copy
+    mov byte [rdi], 0
+.out_open:
+    ; CreateFileA(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0)
+    sub rsp, 56
+    lea rcx, [output_filename]
+    mov edx, 0x40000000
+    xor r8d, r8d
+    xor r9d, r9d
+    mov qword [rsp+32], 2
+    mov qword [rsp+40], 0x80
+    mov qword [rsp+48], 0
+    call CreateFileA
+    add rsp, 56
+    mov [output_fd], rax
+    jmp .arg_next
+
+.check_retries:
+    ; --retries N
+    cmp byte [rsi+1], '-'
+    jne .check_bench
+    cmp dword [rsi+2], 'retr'
+    jne .check_bench
+    cmp dword [rsi+6], 'ies'
+    jne .check_bench
+    cmp byte [rsi+9], 0
+    jne .check_bench
+    mov rdi, rdx
+    call next_token
+    test rax, rax
+    jz .usage
+    mov rdi, rax
+    call parse_u32
+    cmp eax, 6
+    jbe .retry_set
+    mov eax, 6
+.retry_set:
+    mov [retry_max], al
     jmp .arg_next
 
 .check_bench:
@@ -535,7 +902,13 @@ _start:
     jnz .error
 
     call init_rate
+    call blackrock_init
     call intel_init
+    rdtsc
+    shl rdx, 32
+    or rax, rdx
+    mov [xorshift_state], rax
+    mov byte [batch_counter], 0
 
     ; Bench start
     cmp byte [bench_enabled], 0
@@ -579,24 +952,68 @@ _start:
 
     call init_packet_template
 
+    cmp byte [json_mode], 0
+    je .skip_json_header
+    call json_print_header
+.skip_json_header:
+    cmp byte [csv_mode], 0
+    je .skip_csv_header
+    lea rsi, [csv_header]
+    mov edx, csv_header_len
+    call buf_write
+.skip_csv_header:
+
+    cmp byte [disc_enabled], 0
+    je .skip_discovery
+    cmp byte [disc_mode], 1
+    jne .skip_discovery
+    call icmp_host_probe
+    cmp byte [host_up_map], 0
+    je .scan_done
+.skip_discovery:
+
     mov word [sockaddr_dst], AF_INET
     mov eax, [target_ip]
     mov [sockaddr_dst+4], eax
 
     movzx ecx, word [start_port]
     movzx r15d, word [end_port]
+    xor ebx, ebx
+    xor r13, r13
+    cmp byte [port_list_mode], 0
+    je .check_top_ports_mode
+    lea r13, [port_list_buf]
+    movzx r15d, word [port_list_count]
+    jmp .scan_ready
+.check_top_ports_mode:
+    cmp byte [top_ports_mode], 0
+    je .scan_ready
+    mov r13, [top_ports_ptr]
+    movzx r15d, word [top_ports_n]
+.scan_ready:
 
 ; -------------------------------------------------------------------
 ; Scan loop
 ; -------------------------------------------------------------------
 .scan_loop:
+    test r13, r13
+    jz .range_check
+    cmp rbx, r15
+    ja .scan_done
+    mov rdi, rbx
+    mov rsi, r15
+    call blackrock_permute
+    movzx ecx, word [r13 + rax*2]
+    jmp .port_ready
+.range_check:
     cmp ecx, r15d
     ja .scan_done
-
+.port_ready:
     mov ax, cx
     xchg al, ah
     mov [dst_port_be], ax
     call build_packet
+.retry_send:
     call intel_rtt_start
     call intelligence_gate
 
@@ -693,6 +1110,11 @@ _start:
     jmp .report_filtered
 
 .report_open:
+    mov byte [retry_cur], 0
+    mov al, 1
+    call json_print_port
+    mov al, 1
+    call csv_print_port
     call record_open
     cmp byte [stab_enabled], 0
     je .open_no_stab
@@ -708,6 +1130,11 @@ _start:
     jmp .next_port
 
 .report_closed:
+    mov byte [retry_cur], 0
+    mov al, 2
+    call json_print_port
+    mov al, 2
+    call csv_print_port
     cmp byte [stab_enabled], 0
     je .closed_no_stab
     inc dword [stab_recv]
@@ -719,6 +1146,14 @@ _start:
     jmp .next_port
 
 .report_filtered:
+    mov al, [retry_cur]
+    cmp al, [retry_max]
+    jb .retry_again
+    mov byte [retry_cur], 0
+    mov al, 3
+    call json_print_port
+    mov al, 3
+    call csv_print_port
     cmp byte [stab_enabled], 0
     je .filtered_no_stab
     inc dword [stab_timeout]
@@ -727,9 +1162,19 @@ _start:
     mov r9, filtered_msg
     mov r10d, filtered_len
     call write_result
+    jmp .next_port
+
+.retry_again:
+    inc byte [retry_cur]
+    jmp .retry_send
 
 .next_port:
     call stabilize_step
+    test r13, r13
+    jz .inc_range
+    inc rbx
+    jmp .scan_loop
+.inc_range:
     inc ecx
     jmp .scan_loop
 
@@ -742,6 +1187,10 @@ _start:
     mov [bench_end_tsc], rax
 .skip_bench_end:
     call write_summary
+    cmp byte [json_mode], 0
+    je .skip_json_footer
+    call json_print_footer
+.skip_json_footer:
     cmp byte [os_enabled], 0
     je .skip_rtt_map
     call intel_print_rtt_map
@@ -780,6 +1229,14 @@ _start:
 
 .exit:
     call flush_output
+    mov rax, [output_fd]
+    test rax, rax
+    jz .exit_no_out
+    sub rsp, 40
+    mov rcx, rax
+    call CloseHandle
+    add rsp, 40
+.exit_no_out:
     mov rax, [sock_fd]
     cmp rax, INVALID_SOCKET
     je .cleanup
@@ -849,6 +1306,18 @@ flush_output:
     lea rsi, [output_buf]
     mov edx, eax
     call write_stdout
+    mov rax, [output_fd]
+    test rax, rax
+    jz .clear
+    sub rsp, 40
+    mov rcx, rax
+    lea rdx, [output_buf]
+    mov r8d, edx
+    lea r9, [bytes_written]
+    mov qword [rsp+32], 0
+    call WriteFile
+    add rsp, 40
+.clear:
     mov qword [output_pos], 0
 .done:
     ret
@@ -1568,6 +2037,283 @@ wizard_flow:
     call flush_output
     mov eax, 1
     ret
+
+; -------------------------------------------------------------------
+; icmp_host_probe
+; -------------------------------------------------------------------
+icmp_host_probe:
+    push rbx
+    push r12
+    lea rsi, [disc_hdr_msg]
+    mov edx, disc_hdr_len
+    call buf_write
+    mov r12b, [engine_id]
+    mov bl, [scan_mode]
+    mov byte [engine_id], ENGINE_ICMP
+    xor ax, ax
+    mov [dst_port_be], ax
+    call build_icmp_packet
+    call intel_rtt_start
+
+    ; sendto
+    mov edx, 60
+    sub rsp, 56
+    mov rcx, [sock_fd]
+    lea rdx, [packet_buf]
+    mov r8d, edx
+    lea rdx, [packet_buf]
+    xor r9d, r9d
+    lea rax, [sockaddr_dst]
+    mov [rsp+32], rax
+    mov qword [rsp+40], 16
+    call sendto
+    add rsp, 56
+
+    mov byte [host_up_map], 0
+    ; recvfrom with timeout (SO_RCVTIMEO)
+    sub rsp, 56
+    mov rcx, [sock_fd]
+    lea rdx, [recv_buf]
+    mov r8d, 4096
+    xor r9d, r9d
+    mov qword [rsp+32], 0
+    mov qword [rsp+40], 0
+    call recvfrom
+    add rsp, 56
+    cmp eax, SOCKET_ERROR
+    je .print_down
+
+    lea rsi, [recv_buf]
+    mov al, [rsi+9]
+    cmp al, 1
+    jne .print_down
+    mov eax, [rsi+12]
+    cmp eax, [target_ip]
+    jne .print_down
+    mov al, [rsi+20]
+    cmp al, 0
+    jne .print_down
+    mov byte [host_up_map], 1
+    mov al, [rsi+8]
+    mov [last_ttl], al
+    call intel_rtt_record
+
+    lea rsi, [wiz_target_str]
+    xor edx, edx
+.ip_len:
+    cmp byte [rsi+rdx], 0
+    je .ip_len_done
+    inc edx
+    jmp .ip_len
+.ip_len_done:
+    call buf_write
+    lea rsi, [disc_up_msg]
+    mov edx, disc_up_len
+    call buf_write
+    movzx ax, byte [last_ttl]
+    call append_u16
+    lea rsi, [disc_rtt_msg]
+    mov edx, disc_rtt_len
+    call buf_write
+    xor ax, ax
+    call append_u16
+    lea rsi, [disc_ms_msg]
+    mov edx, disc_ms_len
+    call buf_write
+    jmp .restore
+
+.print_down:
+    lea rsi, [wiz_target_str]
+    xor edx, edx
+.ip_len2:
+    cmp byte [rsi+rdx], 0
+    je .ip_len2_done
+    inc edx
+    jmp .ip_len2
+.ip_len2_done:
+    call buf_write
+    lea rsi, [disc_down_msg]
+    mov edx, disc_down_len
+    call buf_write
+
+.restore:
+    mov [engine_id], r12b
+    mov [scan_mode], bl
+    pop r12
+    pop rbx
+    ret
+
+; -------------------------------------------------------------------
+; json_print_header
+; -------------------------------------------------------------------
+json_print_header:
+    cmp byte [json_mode], 0
+    je .done
+    lea rsi, [json_open_brace]
+    mov edx, json_open_len
+    call buf_write
+    lea rsi, [json_target_key]
+    mov edx, json_target_klen
+    call buf_write
+    lea rsi, [wiz_target_str]
+    xor edx, edx
+.target_len:
+    cmp byte [rsi+rdx], 0
+    je .target_len_done
+    inc edx
+    jmp .target_len
+.target_len_done:
+    call buf_write
+    lea rsi, [json_target_end]
+    mov edx, json_target_elen
+    call buf_write
+    lea rsi, [json_ports_key]
+    mov edx, json_ports_klen
+    call buf_write
+.done:
+    ret
+
+; -------------------------------------------------------------------
+; json_print_footer
+; -------------------------------------------------------------------
+json_print_footer:
+    cmp byte [json_mode], 0
+    je .done
+    lea rsi, [json_ports_end]
+    mov edx, json_ports_elen
+    call buf_write
+    lea rsi, [json_close_brace]
+    mov edx, json_close_len
+    call buf_write
+.done:
+    ret
+
+; -------------------------------------------------------------------
+; json_print_port
+; Input: ecx=port, al=state (1=open,2=closed,3=filtered)
+; -------------------------------------------------------------------
+json_print_port:
+    cmp byte [json_mode], 0
+    je .done
+    mov bl, al
+    cmp byte [json_first_port], 0
+    jne .first_ok
+    lea rsi, [json_comma_nl]
+    mov edx, json_comma_nl_len
+    call buf_write
+    jmp .after_first
+.first_ok:
+    mov byte [json_first_port], 0
+.after_first:
+    lea rsi, [json_port_open]
+    mov edx, json_port_oplen
+    call buf_write
+    mov ax, cx
+    call append_u16
+    cmp bl, 1
+    jne .state_closed
+    lea rsi, [json_state_open]
+    mov edx, json_state_oplen
+    call buf_write
+    jmp .state_done
+.state_closed:
+    cmp bl, 2
+    jne .state_filt
+    lea rsi, [json_state_closed]
+    mov edx, json_state_clen
+    call buf_write
+    jmp .state_done
+.state_filt:
+    lea rsi, [json_state_filt]
+    mov edx, json_state_flen
+    call buf_write
+.state_done:
+    lea rsi, [json_ttl_key]
+    mov edx, json_ttl_klen
+    call buf_write
+    movzx ax, byte [last_ttl]
+    call append_u16
+    lea rsi, [json_close_obj]
+    mov edx, json_close_olen
+    call buf_write
+.done:
+    ret
+
+; -------------------------------------------------------------------
+; csv_print_port
+; -------------------------------------------------------------------
+csv_print_port:
+    cmp byte [csv_mode], 0
+    je .done
+    mov bl, al
+    lea rsi, [wiz_target_str]
+    xor edx, edx
+.csv_ip_len:
+    cmp byte [rsi+rdx], 0
+    je .csv_ip_len_done
+    inc edx
+    jmp .csv_ip_len
+.csv_ip_len_done:
+    call buf_write
+    lea rsi, [csv_comma]
+    mov edx, csv_comma_len
+    call buf_write
+    mov ax, cx
+    call append_u16
+    cmp bl, 1
+    jne .csv_closed
+    lea rsi, [csv_open_str]
+    mov edx, csv_open_len
+    call buf_write
+    jmp .csv_state_done
+.csv_closed:
+    cmp bl, 2
+    jne .csv_filt
+    lea rsi, [csv_closed_str]
+    mov edx, csv_closed_len
+    call buf_write
+    jmp .csv_state_done
+.csv_filt:
+    lea rsi, [csv_filt_str]
+    mov edx, csv_filt_len
+    call buf_write
+.csv_state_done:
+    movzx ax, byte [last_ttl]
+    call append_u16
+    lea rsi, [csv_comma]
+    mov edx, csv_comma_len
+    call buf_write
+    xor ax, ax
+    call append_u16
+    lea rsi, [csv_comma]
+    mov edx, csv_comma_len
+    call buf_write
+    cmp byte [os_enabled], 0
+    je .csv_no_os
+    movzx eax, byte [os_result_idx]
+    cmp eax, 6
+    jbe .csv_os_ok
+    mov eax, 6
+.csv_os_ok:
+    mov rsi, [os_str_ptrs + rax*8]
+    xor edx, edx
+.csv_os_len:
+    cmp byte [rsi+rdx], 0
+    je .csv_os_len_done
+    inc edx
+    jmp .csv_os_len
+.csv_os_len_done:
+    call buf_write
+    lea rsi, [newline_msg]
+    mov edx, newline_len
+    call buf_write
+    jmp .done
+.csv_no_os:
+    lea rsi, [newline_msg]
+    mov edx, newline_len
+    call buf_write
+.done:
+    ret
 ; ===========================================================================
 ; NetroX-ASM  |  Windows x86_64  |  Part 4 of 4: Rate, stabilize, helpers, TSC
 ; ===========================================================================
@@ -1743,6 +2489,36 @@ init_rate:
     mov eax, [rate_value]
     test eax, eax
     jnz .do
+    mov al, [timing_level]
+    test al, al
+    jz .timing_done
+    cmp al, 1
+    jne .t2
+    mov eax, [timing_t1_rate]
+    mov [rate_value], eax
+    jmp .timing_done
+.t2:
+    cmp al, 2
+    jne .t3
+    mov eax, [timing_t2_rate]
+    mov [rate_value], eax
+    jmp .timing_done
+.t3:
+    cmp al, 3
+    jne .t4
+    mov eax, [timing_t3_rate]
+    mov [rate_value], eax
+    jmp .timing_done
+.t4:
+    cmp al, 4
+    jne .t5
+    mov eax, [timing_t4_rate]
+    mov [rate_value], eax
+    jmp .timing_done
+.t5:
+    mov eax, [timing_t5_rate]
+    mov [rate_value], eax
+.timing_done:
     cmp byte [stab_enabled], 0
     je .done
     mov dword [rate_value], 200000
@@ -1816,6 +2592,87 @@ calibrate_tsc:
     div rcx
     mov [tsc_hz], rax
 .done:
+    ret
+
+; -------------------------------------------------------------------
+; blackrock_init
+; -------------------------------------------------------------------
+blackrock_init:
+    rdtsc
+    shl rdx, 32
+    or rax, rdx
+    mov r8, rax
+    mov rcx, 6
+    lea rdi, [blackrock_key_0]
+.keygen:
+    mov rax, r8
+    shl rax, 13
+    xor r8, rax
+    mov rax, r8
+    shr rax, 7
+    xor r8, rax
+    mov rax, r8
+    shl rax, 17
+    xor r8, rax
+    mov [rdi], r8
+    add rdi, 8
+    loop .keygen
+    ret
+
+; -------------------------------------------------------------------
+; feistel_f
+; -------------------------------------------------------------------
+feistel_f:
+    mov rax, r9
+    add rax, r10
+    mov rcx, 0x9e3779b97f4a7c15
+    mul rcx
+    xor rax, rdx
+    rol rax, 17
+    ret
+
+; -------------------------------------------------------------------
+; blackrock_permute
+; -------------------------------------------------------------------
+blackrock_permute:
+    push rbx
+    push r12
+    push r13
+
+    mov r12, rdi
+    mov r13, rsi
+
+    mov rbx, r12
+    and rbx, 0xFF
+    mov rcx, r12
+    shr rcx, 8
+    and rcx, 0xFF
+
+    %assign round 0
+    %rep 6
+        mov r9, rcx
+        mov r10, [blackrock_key_ %+ round]
+        call feistel_f
+        xor rbx, rax
+        and rbx, 0xFF
+        xchg rbx, rcx
+        %assign round round+1
+    %endrep
+
+    shl rcx, 8
+    or rcx, rbx
+.cycle_walk:
+    cmp rcx, r13
+    jb .done
+    inc rcx
+    cmp rcx, r13
+    jb .done
+    xor rcx, rcx
+.done:
+    mov rax, rcx
+    pop r13
+    pop r12
+    pop rbx
     ret
 
 ; -------------------------------------------------------------------
