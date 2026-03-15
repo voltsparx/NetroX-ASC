@@ -22,8 +22,8 @@ SECTION .data
 
 usage_msg   db "Usage: netrox-asm <target_ip> [-p port|start-end|-]", 10
             db "       [--rate N] [--iface IFACE] [--scan MODE]", 10
-            db "       [--bench] [--os] [--stabilize] [--about] [--wizard]", 10
-            db "Scan modes: syn ack fin null xmas window maimon udp ping sar kis phantom", 10
+            db "       [--bench] [--os] [--stabilize] [--about] [--wizard] [--callback]", 10
+            db "Scan modes: syn ack fin null xmas window maimon udp ping sar kis phantom callback", 10
 usage_len   equ $-usage_msg
 
 banner_msg  db "   _  __    __           _  __    ___   ______  ___", 10
@@ -368,6 +368,56 @@ phantom_plus_msg     db "+", 0
 phantom_timeout_str  db "timeout", 0
 phantom_dash_msg     db "-", 0
 phantom_ns_msg       db "ns", 0
+
+cb_hdr_msg        db "--- [ CALLBACK-PING MONITOR: ACTIVE ] ---", 10, 0
+cb_proto_msg      db "Protocol    : ", 0
+cb_timeout_msg    db "Timeout     : ", 0
+cb_ms_msg         db "ms", 10, 0
+cb_prefix_msg     db "[CB] ", 0
+cb_trigger_syn    db "TRIGGER=SYN  ", 0
+cb_trigger_icmp   db "TRIGGER=ICMP ", 0
+cb_trigger_udp    db "TRIGGER=UDP  ", 0
+cb_proto_dns_str  db "PROTO=DNS  ", 0
+cb_proto_ntp_str  db "PROTO=NTP  ", 0
+cb_proto_icmp_str db "PROTO=ICMP ", 0
+cb_proto_ack_str  db "PROTO=ACK  ", 0
+cb_class_silent   db "CLASS=SILENT     ", 0
+cb_class_std      db "CLASS=STANDARD   ", 0
+cb_class_resp     db "CLASS=RESPONSIVE ", 0
+cb_class_delayed  db "CLASS=DELAYED    ", 0
+cb_lat_msg        db "LATENCY=", 0
+cb_lat_timeout    db "timeout", 0
+cb_os_msg         db "OS=", 0
+cb_ttl_msg        db "TTL=", 0
+cb_sum_hdr        db 10, "--- [ CALLBACK-PING REPORT ] ---", 10, 0
+cb_sum_total      db "Total callbacks : ", 0
+cb_sum_silent     db "Silent drops    : ", 0
+cb_sum_standard   db "Standard resp   : ", 0
+cb_sum_responsive db "Protocol resp   : ", 0
+cb_sum_delayed    db "Delayed resp    : ", 0
+cb_sum_os_hdr     db "OS breakdown    :", 10, 0
+cb_sum_linux      db "  Linux         : ", 0
+cb_sum_windows    db "  Windows       : ", 0
+cb_sum_macos      db "  macOS         : ", 0
+cb_sum_device     db "  Device        : ", 0
+cb_sum_unknown    db "  Unknown       : ", 0
+
+align 4
+cb_dns_payload:
+    db 0xCB, 0x4B
+    db 0x01, 0x00
+    db 0x00, 0x01
+    db 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    db 8,'c','a','l','l','b','a','c','k'
+    db 5,'l','o','c','a','l', 0
+    db 0x00, 0x01
+    db 0x00, 0x01
+cb_dns_len equ $ - cb_dns_payload
+
+cb_ntp_payload:
+    db 0x1B
+    times 47 db 0x00
+cb_ntp_len equ $ - cb_ntp_payload
 
 ; Result output strings
 closed_msg      db " CLOSED", 10
@@ -735,6 +785,40 @@ phantom_count_closed      resd 1
 phantom_count_filtered    resd 1
 phantom_count_tev         resd 1
 phantom_count_total       resd 1
+
+; Callback engine state
+cb_enabled            resb 1
+cb_secondary_enabled  resb 1
+cb_proto              resb 1
+cb_response_timeout   resd 1
+cb_t_send             resq 1
+cb_t_recv             resq 1
+cb_latency_ns         resq 1
+cb_class              resb 1
+cb_src_ip             resd 1
+cb_src_port           resw 1
+cb_trigger_proto      resb 1
+
+; Callback queue (16 slots * 8 bytes)
+cb_queue              resb 128
+cb_queue_head         resb 1
+cb_queue_tail         resb 1
+cb_queue_count        resb 1
+
+; Subnet seen map (8192 bytes = one bit per /24)
+cb_subnet_seen        resb 8192
+
+; Callback counters
+cb_count_total        resd 1
+cb_count_silent       resd 1
+cb_count_standard     resd 1
+cb_count_responsive   resd 1
+cb_count_delayed      resd 1
+cb_count_linux        resd 1
+cb_count_windows      resd 1
+cb_count_macos        resd 1
+cb_count_device       resd 1
+cb_count_unknown_os   resd 1
 
 ; ===========================================================================
 ; NetroX-ASM  |  Linux x86_64  |  Part 2 of 5: _start, arg parsing, init
@@ -1137,6 +1221,19 @@ _start:
     mov byte [os_enabled], 1
     jmp .arg_next
 
+.check_callback:
+    ; --callback
+    cmp  byte [rdi+1], '-'
+    jne  .check_engine
+    cmp  dword [rdi+2], 'call'
+    jne  .check_engine
+    cmp  dword [rdi+6], 'back'
+    jne  .check_engine
+    cmp  byte  [rdi+10], 0
+    jne  .check_engine
+    mov  byte [cb_secondary_enabled], 1
+    jmp  .arg_next
+
 .check_engine:
     cmp byte [rdi+1], '-'
     jne .check_depth
@@ -1371,6 +1468,12 @@ _start:
     call phantom_run
     jmp  .scan_done
 .not_phantom_direct:
+    cmp  byte [scan_mode], SCAN_CALLBACK
+    jne  .not_callback_direct
+    call cb_init
+    call cb_run
+    jmp  .scan_done
+.not_callback_direct:
     cmp byte [engine_mode], ENGINE_MODE_SEQ
     je .use_seq_engine
     cmp byte [engine_mode], 0

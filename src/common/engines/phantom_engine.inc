@@ -129,6 +129,7 @@ tev_check_guardrail:
     mov  rbx, 8
     xor  rdx, rdx
     div  rbx                       ; ax = avg
+    mov  r9w, ax                   ; save avg
     movzx ebx, byte [phantom_tev_threshold]
     mov  rcx, 80
     imul ebx, ecx
@@ -137,12 +138,7 @@ tev_check_guardrail:
     mov  eax, ebx
     div  ecx                       ; ax = threshold*0.8
     mov  bx, ax
-    mov  ax, word [tev_history + ((ecx))] ; dummy to keep ax free
-    mov  ax, word [tev_history + 0]       ; overwrite, will not use
-    mov  ax, word [tev_history + 0]
-    mov  ax, word [tev_history + 0]
-    ; compare rolling avg (stored earlier in ax) > threshold*0.8
-    cmp  word [tev_history + 0], bx
+    cmp  r9w, bx
     jb   .check_trend
     jmp  .trigger
 
@@ -339,6 +335,12 @@ phantom_passive_listen:
     mov  eax, [recv_buf+12]
     cmp  eax, [target_ip]
     jne  .listen_loop
+    mov  al, [recv_buf+9]
+    cmp  al, 6
+    je   .proto_ok
+    cmp  al, 17
+    jne  .listen_loop
+.proto_ok:
     movzx eax, byte [recv_buf]
     and al, 0x0F
     shl al, 2

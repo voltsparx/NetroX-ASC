@@ -16,5 +16,6 @@
 %define SCAN_SAR        10      ; SAR resonance scan
 %define SCAN_KIS        11      ; KIS impedance scan
 %define SCAN_PHANTOM    12      ; Phantom scan
+%define SCAN_CALLBACK   13      ; Callback-Ping scan
 
 %endif

@@ -105,6 +105,12 @@ recv_and_classify:
 
 .classified:
     mov eax, 1
+    ; Secondary callback check
+    cmp  byte [cb_secondary_enabled], 0
+    je   .no_cb_secondary
+    lea  rsi, [recv_buf]
+    call cb_secondary_check
+.no_cb_secondary:
     jmp .done
 
 .no_response:

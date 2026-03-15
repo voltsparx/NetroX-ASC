@@ -236,4 +236,36 @@
 %define PHANTOM_TCP_FLAGS_ACK     0x10
 %define PHANTOM_TCP_WINDOW        0
 
+; ============================================================
+; Callback scan mode
+; ============================================================
+%define SCAN_CALLBACK           13
+
+; ============================================================
+; Callback bait protocol constants
+; ============================================================
+%define CB_PROTO_DNS            1
+%define CB_PROTO_NTP            2
+%define CB_PROTO_ICMP           3
+%define CB_PROTO_TCP_ACK        4
+
+; ============================================================
+; Callback response classification constants
+; ============================================================
+%define CB_CLASS_UNKNOWN        0
+%define CB_CLASS_SILENT         1
+%define CB_CLASS_STANDARD       2
+%define CB_CLASS_RESPONSIVE     3
+%define CB_CLASS_DELAYED        4
+
+; ============================================================
+; Callback tuning constants
+; ============================================================
+%define CB_RESPONSE_TIMEOUT_MS  500
+%define CB_QUEUE_SIZE           16
+%define CB_DELAYED_THRESHOLD_MS 200
+%define CB_DNS_PORT_BE          0x3500
+%define CB_NTP_PORT_BE          0x7B00
+%define CB_IDENT                0xCB4B
+
 %endif

@@ -33,6 +33,11 @@ engine_run:
     call phantom_run
     ret
 .not_phantom:
+    cmp  byte [scan_mode], SCAN_CALLBACK
+    jne  .not_callback
+    call cb_run
+    ret
+.not_callback:
     ret
 
 print_engine_status:

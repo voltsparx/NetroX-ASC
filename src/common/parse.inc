@@ -418,7 +418,7 @@ parse_scan_mode:
     ret
 .scan_phantom:
     cmp  al, 'p'
-    jne  .invalid
+    jne  .scan_callback
     cmp  byte [rdi+1], 'h'
     jne  .invalid
     cmp  byte [rdi+2], 'a'
@@ -434,6 +434,28 @@ parse_scan_mode:
     cmp  byte [rdi+7], 0
     jne  .invalid
     mov  al, SCAN_PHANTOM
+    pop  rbx
+    ret
+.scan_callback:
+    cmp  al, 'c'
+    jne  .invalid
+    cmp  byte [rdi+1], 'a'
+    jne  .invalid
+    cmp  byte [rdi+2], 'l'
+    jne  .invalid
+    cmp  byte [rdi+3], 'l'
+    jne  .invalid
+    cmp  byte [rdi+4], 'b'
+    jne  .invalid
+    cmp  byte [rdi+5], 'a'
+    jne  .invalid
+    cmp  byte [rdi+6], 'c'
+    jne  .invalid
+    cmp  byte [rdi+7], 'k'
+    jne  .invalid
+    cmp  byte [rdi+8], 0
+    jne  .invalid
+    mov  al, SCAN_CALLBACK
     pop  rbx
     ret
 .invalid:
