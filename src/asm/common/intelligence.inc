@@ -401,6 +401,7 @@ intel_rtt_record:
     movzx ebx, cx
     dec  ebx                        ; 0-based
     mov  [intel_rtt_table + rbx*4], eax
+    mov  [last_rtt_ns], eax
 .rtt_skip:
     pop  rcx
     pop  rdx

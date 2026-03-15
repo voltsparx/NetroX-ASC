@@ -19,6 +19,9 @@ sockaddr_ll     resb 32
 
 send_fd         resq 1
 iface_set       resb 1
+iface_name      resb 16
+ifreq_buf       resb 40
+ifindex         resd 1
 
 dst_port        resw 1
 dst_port_be     resw 1
@@ -29,6 +32,7 @@ target_ip       resd 1
 scan_mode       resb 1
 cidr_mode       resb 1
 os_enabled      resb 1
+engine_id       resb 1
 
 batch_counter   resb 1
 
@@ -48,5 +52,10 @@ last_win        resw 1
 last_rtt_ns     resd 1
 
 resume_index    resq 1
+host_up_map     resb 1
+source_ip       resd 1
+sockaddr_tmp    resb 16
+sockaddr_local  resb 16
+addrlen         resd 1
 
 %endif

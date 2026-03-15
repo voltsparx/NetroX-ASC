@@ -437,6 +437,76 @@ blackrock_permute:
     ret
 
 ; -------------------------------------------------------------------
+; stabilize_step / slow_down / speed_up
+; -------------------------------------------------------------------
+stabilize_step:
+    cmp byte [stab_enabled], 0
+    je .done
+    cmp byte [rate_enabled], 0
+    je .done
+    push rcx
+    mov eax, [stab_sent]
+    test eax, eax
+    jz .restore
+    xor edx, edx
+    mov ecx, 128
+    div ecx
+    test edx, edx
+    jne .restore
+    mov eax, [stab_timeout]
+    mov ecx, [stab_recv]
+    lea edx, [ecx*2]
+    cmp eax, edx
+    ja .slow
+    lea edx, [eax*2]
+    cmp ecx, edx
+    ja .fast
+    jmp .reset
+.slow:
+    call slow_down
+    jmp .reset
+.fast:
+    call speed_up
+.reset:
+    mov dword [stab_sent], 0
+    mov dword [stab_recv], 0
+    mov dword [stab_timeout], 0
+.restore:
+    pop rcx
+.done:
+    ret
+
+slow_down:
+    mov rax, [rate_cycles]
+    mov rcx, rax
+    shr rcx, 2
+    add rax, rcx
+    mov rdx, [rate_max_cycles]
+    test rdx, rdx
+    jz .store
+    cmp rax, rdx
+    jbe .store
+    mov rax, rdx
+.store:
+    mov [rate_cycles], rax
+    ret
+
+speed_up:
+    mov rax, [rate_cycles]
+    mov rcx, rax
+    shr rcx, 3
+    sub rax, rcx
+    mov rdx, [rate_min_cycles]
+    test rdx, rdx
+    jz .store
+    cmp rax, rdx
+    jae .store
+    mov rax, rdx
+.store:
+    mov [rate_cycles], rax
+    ret
+
+; -------------------------------------------------------------------
 ; Main scan loop (extracted from legacy main.asm)
 ; NOTE: output callbacks still need conversion to C++.
 ; -------------------------------------------------------------------
