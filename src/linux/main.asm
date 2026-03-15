@@ -23,7 +23,7 @@ SECTION .data
 usage_msg   db "Usage: netrox-asm <target_ip> [-p port|start-end|-]", 10
             db "       [--rate N] [--iface IFACE] [--scan MODE]", 10
             db "       [--bench] [--os] [--stabilize] [--about] [--wizard]", 10
-            db "Scan modes: syn ack fin null xmas window maimon", 10
+            db "Scan modes: syn ack fin null xmas window maimon udp ping sar kis", 10
 usage_len   equ $-usage_msg
 
 banner_msg  db "   _  __    __           _  __    ___   ______  ___", 10
@@ -215,6 +215,123 @@ eng_auto_msg    db "  Auto-selected: ", 0
 eng_rtt_msg     db "  Calibration: RTT=", 0
 eng_loss_msg    db "us loss=", 0
 eng_pct_msg     db "%", 10, 0
+
+sar_hdr_msg       db "--- [ SAR RESONANCE SCAN: ", 0
+sar_hdr_end       db " ] ---", 10, 0
+sar_base_msg      db "Baseline RTT : ", 0
+sar_ns_msg        db "ns", 10, 0
+sar_limit_msg     db "Synaptic Lmt : ", 0
+sar_x_msg         db "x", 10, 0
+sar_col_hdr       db "PORT   DELTA    CLASS              BASELINE  MEASURED", 10, 0
+sar_col_sep       db "-----  -------  -----------------  --------  --------", 10, 0
+sar_sync_msg      db 10, "[SYNAPTIC SYNC] Cognitive load spike. Hard stop.", 10, 0
+sar_sum_hdr       db 10, "--- [ SAR COGNITIVE MAP COMPLETE ] ---", 10, 0
+sar_sum_audit     db "Ports audited   : ", 0
+sar_sum_none      db "Unmonitored     : ", 0
+sar_sum_acl       db "ACL/Stateful    : ", 0
+sar_sum_dpi       db "DPI detected    : ", 0
+sar_sum_ai        db "AI-EDR detected : ", 0
+sar_sum_proxy     db "Proxy detected  : ", 0
+sar_sum_syncs     db "Synaptic Syncs  : ", 0
+sar_status_stab   db "RESONANCE: STABLE", 10, 0
+sar_status_coll   db "RESONANCE: COLLAPSING", 10, 0
+sar_status_stor   db "RESONANCE: STORM", 10, 0
+sar_class_str_0   db "UNMONITORED      ", 0
+sar_class_str_1   db "STATELESS-ACL    ", 0
+sar_class_str_2   db "STATEFUL-FW      ", 0
+sar_class_str_3   db "DPI-LAYER        ", 0
+sar_class_str_4   db "AI-EDR           ", 0
+sar_class_str_5   db "TRANSPARENT-PROXY", 0
+sar_class_ptrs    dq sar_class_str_0, sar_class_str_1, sar_class_str_2
+                  dq sar_class_str_3, sar_class_str_4, sar_class_str_5
+
+; Probe payloads
+sar_ntp_payload:
+    db 0x1B
+    times 47 db 0x00
+sar_ntp_len equ $ - sar_ntp_payload
+
+sar_synthetic_payload:
+    db 'G','E','T',' '
+    db 0x00,0x01,0x00,0x00
+    db 0x16,0x03,0x01,0x00
+    db 0xDE,0xAD,0xBE,0xEF
+sar_synthetic_len equ $ - sar_synthetic_payload
+
+kis_hdr_msg       db "--- [ KIS IMPEDANCE SCAN: ", 0
+kis_hdr_end       db " ] ---", 10, 0
+kis_ambient_msg   db "Ambient RTT  : ", 0
+kis_ttl_msg       db "  TTL=", 0
+kis_fuse_ok_msg   db "Thermal Fuse : INTACT", 10, 0
+kis_brake_msg     db 10, "[QUANTUM BRAKE] Thermal Fuse blown: ", 0
+kis_brake_end     db 10, 0
+kis_col_hdr       db "PORT   IMP(ns)  JITTER  STATE     SJS-ID      CONF", 10, 0
+kis_col_sep       db "-----  -------  ------  --------  ----------  ----", 10, 0
+kis_sum_hdr       db 10, "--- [ KIS IMPEDANCE REPORT ] ---", 10, 0
+kis_sum_closed    db "Closed        : ", 0
+kis_sum_filtered  db "Filtered      : ", 0
+kis_sum_open      db "Open          : ", 0
+kis_sum_heavy     db "Open-Heavy    : ", 0
+kis_sum_virt      db "Virtualized   : ", 0
+kis_sum_unknown   db "Unknown       : ", 0
+kis_hmap_hdr      db 10, "--- [ KIS HEAT MAP ] ---", 10, 0
+kis_ns_msg        db "ns", 0
+kis_pct_msg       db "%", 0
+
+; Fuse reason strings
+kis_fuse_r1       db "TTL shift detected", 0
+kis_fuse_r2       db "Jitter explosion (>10%)", 0
+kis_fuse_r3       db "Impedance spike (>5x baseline)", 0
+kis_fuse_r4       db "Consecutive timeouts (5+)", 0
+kis_fuse_r5       db "Baseline drift (>15%)", 0
+kis_fuse_reason_ptrs:
+    dq 0
+    dq kis_fuse_r1, kis_fuse_r2, kis_fuse_r3
+    dq kis_fuse_r4, kis_fuse_r5
+
+; SJS service name strings
+kis_svc_str_0     db "UNKNOWN   ", 0
+kis_svc_str_1     db "CLOSED    ", 0
+kis_svc_str_2     db "FILTERED  ", 0
+kis_svc_str_3     db "OPEN      ", 0
+kis_svc_str_4     db "HTTP      ", 0
+kis_svc_str_5     db "HTTPS     ", 0
+kis_svc_str_6     db "SSH       ", 0
+kis_svc_str_7     db "DNS       ", 0
+kis_svc_str_8     db "DATABASE  ", 0
+kis_svc_str_9     db "OPEN-HEAVY", 0
+kis_svc_str_10    db "VIRTUAL   ", 0
+kis_svc_ptrs:
+    dq kis_svc_str_0,  kis_svc_str_1,  kis_svc_str_2
+    dq kis_svc_str_3,  kis_svc_str_4,  kis_svc_str_5
+    dq kis_svc_str_6,  kis_svc_str_7,  kis_svc_str_8
+    dq kis_svc_str_9,  kis_svc_str_10
+
+; SJS table compiled in
+align 4
+kis_sjs_table:
+    dw  50,  200,   0,  10, KIS_SVC_CLOSED,   95
+    times 13 db 0
+    dw 200,  500,   0,  30, KIS_SVC_FILTERED, 80
+    times 13 db 0
+    dw 500,  900,  10,  40, KIS_SVC_OPEN_RAW, 70
+    times 13 db 0
+    dw 500,  800,  15,  35, KIS_SVC_HTTP,     75
+    times 13 db 0
+    dw 600,  950,  20,  50, KIS_SVC_HTTPS,    72
+    times 13 db 0
+    dw 700, 1100,  25,  60, KIS_SVC_SSH,      78
+    times 13 db 0
+    dw 500,  750,   5,  20, KIS_SVC_DNS,      82
+    times 13 db 0
+    dw 800, 1400,  30,  80, KIS_SVC_DB,       68
+    times 13 db 0
+    dw1200, 2500,  40, 120, KIS_SVC_HEAVY,    65
+    times 13 db 0
+    dw2500, 9999,  50, 500, KIS_SVC_VIRT,     60
+    times 13 db 0
+    dw 0, 0, 0, 0, 0, 0
+    times 13 db 0
 
 ; Result output strings
 closed_msg      db " CLOSED", 10
@@ -482,6 +599,74 @@ hybrid_selected     resb 1
 ; Engine sub-options
 par_sock_count      resb 1
 thread_count_cfg    resb 1
+
+; SAR engine state
+sar_enabled         resb 1
+sar_baseline_ns     resq 1
+sar_baseline_samples resq 5
+sar_synced          resb 1
+sar_synaptic_limit  resw 1
+sar_class           resb 1
+sar_delta_history   resw 8
+sar_delta_hist_idx  resb 1
+sar_timeout_streak  resb 1
+sar_rtt_samples     resq 3
+sar_rtt_idx         resb 1
+sar_t_send          resq 1
+sar_t_recv          resq 1
+sar_chameleon_ns    resq 1
+sar_synthetic_ns    resq 1
+sar_delta_display   resb 1
+
+; SAR result counters
+sar_count_none      resd 1
+sar_count_acl       resd 1
+sar_count_stateful  resd 1
+sar_count_dpi       resd 1
+sar_count_ai        resd 1
+sar_count_proxy     resd 1
+sar_count_syncs     resd 1
+sar_count_total     resd 1
+
+; SAR result table
+sar_results         resb 65535 * 16
+
+; Waveform
+waveform_buf        resb 80
+waveform_col        resb 1
+
+; KIS engine state
+kis_enabled          resb 1
+kis_fuse_blown       resb 1
+kis_fuse_reason      resb 1
+kis_ambient_ns       resq 1
+kis_ambient_ttl      resb 1
+kis_ambient_samples  resq 8
+kis_jitter_baseline  resq 1
+kis_recheck_counter  resb 1
+kis_timeout_streak   resb 1
+kis_baseline_orig    resq 1
+kis_closed_ref_ns    resq 1
+kis_t_send           resq 1
+kis_t_recv           resq 1
+kis_svc_id           resw 1
+kis_confidence       resb 1
+kis_probe_samples    resq 5
+kis_port_impedance   resq 1
+kis_port_jitter      resq 1
+
+; Result tracking
+kis_count_closed     resd 1
+kis_count_filtered   resd 1
+kis_count_open       resd 1
+kis_count_heavy      resd 1
+kis_count_virt       resd 1
+kis_count_unknown    resd 1
+kis_count_total      resd 1
+
+; Result table and heat map
+kis_results          resb 65535 * 24
+kis_heatmap_buf      resb 65535
 
 ; ===========================================================================
 ; NetroX-ASM  |  Linux x86_64  |  Part 2 of 5: _start, arg parsing, init
@@ -1100,6 +1285,18 @@ _start:
 .skip_csv_header:
 
     ; dispatch to selected engine if not sequential
+    cmp  byte [scan_mode], SCAN_SAR
+    jne  .not_sar_direct
+    call sar_init
+    call sar_run
+    jmp  .scan_done
+.not_sar_direct:
+    cmp  byte [scan_mode], SCAN_KIS
+    jne  .not_kis_direct
+    call kis_init
+    call kis_run
+    jmp  .scan_done
+.not_kis_direct:
     cmp byte [engine_mode], ENGINE_MODE_SEQ
     je .use_seq_engine
     cmp byte [engine_mode], 0

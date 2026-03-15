@@ -366,6 +366,56 @@ parse_scan_mode:
     mov  al, SCAN_MAIMON
     pop  rbx
     ret
+.udp:
+    cmp  al, 'u'
+    jne  .ping
+    cmp  byte [rdi+1], 'd'
+    jne  .ping
+    cmp  byte [rdi+2], 'p'
+    jne  .ping
+    cmp  byte [rdi+3], 0
+    jne  .ping
+    mov  al, SCAN_UDP
+    pop  rbx
+    ret
+.ping:
+    cmp  al, 'p'
+    jne  .scan_sar
+    cmp  byte [rdi+1], 'i'
+    jne  .scan_sar
+    cmp  byte [rdi+2], 'n'
+    jne  .scan_sar
+    cmp  byte [rdi+3], 'g'
+    jne  .scan_sar
+    cmp  byte [rdi+4], 0
+    jne  .scan_sar
+    mov  al, SCAN_PING
+    pop  rbx
+    ret
+.scan_sar:
+    cmp  al, 's'
+    jne  .scan_kis
+    cmp  byte [rdi+1], 'a'
+    jne  .invalid
+    cmp  byte [rdi+2], 'r'
+    jne  .invalid
+    cmp  byte [rdi+3], 0
+    jne  .invalid
+    mov  al, SCAN_SAR
+    pop  rbx
+    ret
+.scan_kis:
+    cmp  al, 'k'
+    jne  .invalid
+    cmp  byte [rdi+1], 'i'
+    jne  .invalid
+    cmp  byte [rdi+2], 's'
+    jne  .invalid
+    cmp  byte [rdi+3], 0
+    jne  .invalid
+    mov  al, SCAN_KIS
+    pop  rbx
+    ret
 .invalid:
     xor  eax, eax
     pop  rbx

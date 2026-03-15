@@ -133,4 +133,79 @@
 ; ============================================================
 %define INFLIGHT_SIZE         512
 
+; ============================================================
+; SAR Scan mode
+; ============================================================
+%define SCAN_SAR                10
+
+; ============================================================
+; SAR defense class constants
+; ============================================================
+%define SAR_CLASS_NONE          0
+%define SAR_CLASS_ACL           1
+%define SAR_CLASS_STATEFUL      2
+%define SAR_CLASS_DPI           3
+%define SAR_CLASS_AI_EDR        4
+%define SAR_CLASS_PROXY         5
+
+; ============================================================
+; SAR timing and behavior constants
+; ============================================================
+%define SAR_BASELINE_PROBES     5
+%define SAR_PROBES_PER_PORT     3
+%define SAR_SYNAPTIC_DEFAULT    1500
+%define SAR_TREND_WINDOW        8
+%define SAR_TIMEOUT_STREAK_MAX  3
+
+; ============================================================
+; KIS scan mode
+; ============================================================
+%define SCAN_KIS                11
+
+; ============================================================
+; KIS service fingerprint constants
+; ============================================================
+%define KIS_SVC_UNKNOWN         0
+%define KIS_SVC_CLOSED          1
+%define KIS_SVC_FILTERED        2
+%define KIS_SVC_OPEN_RAW        3
+%define KIS_SVC_HTTP            4
+%define KIS_SVC_HTTPS           5
+%define KIS_SVC_SSH             6
+%define KIS_SVC_DNS             7
+%define KIS_SVC_DB              8
+%define KIS_SVC_HEAVY           9
+%define KIS_SVC_VIRT            10
+
+; ============================================================
+; KIS thermal fuse trigger constants
+; ============================================================
+%define KIS_FUSE_TTL_SHIFT      1
+%define KIS_FUSE_JITTER_EXP     2
+%define KIS_FUSE_IMP_SPIKE      3
+%define KIS_FUSE_TIMEOUTS       4
+%define KIS_FUSE_DRIFT          5
+
+; ============================================================
+; KIS heat map symbols (ASCII)
+; ============================================================
+%define KIS_SYM_CLOSED     '.'
+%define KIS_SYM_FILTERED   ':'
+%define KIS_SYM_OPEN_L     'o'
+%define KIS_SYM_OPEN_M     'O'
+%define KIS_SYM_OPEN_H     '@'
+%define KIS_SYM_VIRT       '#'
+%define KIS_SYM_UNKNOWN    '?'
+
+; ============================================================
+; KIS probe and fuse tuning
+; ============================================================
+%define KIS_AMBIENT_PROBES       8
+%define KIS_PROBES_PER_PORT      5
+%define KIS_TTL_RECHECK_INTERVAL 32
+%define KIS_TIMEOUT_STREAK_MAX   5
+%define KIS_JITTER_THRESHOLD     110
+%define KIS_IMP_SPIKE_MULT       5
+%define KIS_DRIFT_THRESHOLD      115
+
 %endif

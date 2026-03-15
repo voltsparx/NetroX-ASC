@@ -18,6 +18,16 @@ engine_run:
     je engine_async_run
     cmp al, ENGINE_MODE_PIPELINE
     je engine_pipeline_run
+    cmp  byte [scan_mode], SCAN_SAR
+    jne  .not_sar
+    call sar_run
+    ret
+.not_sar:
+    cmp  byte [scan_mode], SCAN_KIS
+    jne  .not_kis
+    call kis_run
+    ret
+.not_kis:
     ret
 
 print_engine_status:

@@ -11,5 +11,9 @@
 %define SCAN_XMAS       5       ; FIN+PSH+URG         flags=0x29
 %define SCAN_WINDOW     6       ; ACK (window inspect) flags=0x10
 %define SCAN_MAIMON     7       ; FIN+ACK             flags=0x11
+%define SCAN_UDP        8       ; UDP datagram scan
+%define SCAN_PING       9       ; ICMP echo scan
+%define SCAN_SAR        10      ; SAR resonance scan
+%define SCAN_KIS        11      ; KIS impedance scan
 
 %endif
