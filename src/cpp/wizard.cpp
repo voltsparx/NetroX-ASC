@@ -1,3 +1,4 @@
+#include "wizard.h"
 #include "args.h"
 #include "output.h"
 #include <cstdlib>
