@@ -190,6 +190,10 @@ kis_sjs_lookup:
 kis_quantum_brake:
     mov byte [kis_fuse_blown], 1
     call flush_output
+    call color_guard_check
+    jz .skip_brake_color
+    COLOR_YELLOW
+.skip_brake_color:
     lea rsi, [kis_brake_msg]
     call .pstr
     movzx eax, byte [kis_fuse_reason]
@@ -197,6 +201,10 @@ kis_quantum_brake:
     call .pstr
     lea rsi, [kis_brake_end]
     call .pstr
+    call color_guard_check
+    jz .skip_brake_reset
+    COLOR_RESET
+.skip_brake_reset:
     call flush_output
     jmp .scan_done
 .pstr:
@@ -567,8 +575,16 @@ kis_print_result:
 ; kis_print_summary
 ; ------------------------------------------------------------
 kis_print_summary:
+    call color_guard_check
+    jz .skip_sum_color
+    COLOR_CYAN
+.skip_sum_color:
     lea rsi, [kis_sum_hdr]
     call .pstr
+    call color_guard_check
+    jz .skip_sum_reset
+    COLOR_RESET
+.skip_sum_reset:
     lea rsi, [kis_sum_closed]
     call .pstr
     mov eax, [kis_count_closed]
@@ -614,8 +630,16 @@ kis_print_summary:
 
     cmp byte [kis_fuse_blown], 0
     jne .fuse_done
+    call color_guard_check
+    jz .skip_fuse_color
+    COLOR_GREEN
+.skip_fuse_color:
     lea rsi, [kis_fuse_ok_msg]
     call .pstr
+    call color_guard_check
+    jz .skip_fuse_reset
+    COLOR_RESET
+.skip_fuse_reset:
 .fuse_done:
     ret
 
@@ -652,10 +676,18 @@ kis_init:
     mov [kis_baseline_orig], rax
     mov qword [kis_jitter_baseline], 0
 
+    call color_guard_check
+    jz .skip_hdr_color
+    COLOR_CYAN
+.skip_hdr_color:
     lea rsi, [kis_hdr_msg]
     call .pstr
     lea rsi, [kis_hdr_end]
     call .pstr
+    call color_guard_check
+    jz .skip_hdr_reset
+    COLOR_RESET
+.skip_hdr_reset:
     lea rsi, [kis_ambient_msg]
     call .pstr
     mov rax, [kis_ambient_ns]

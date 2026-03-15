@@ -4,3 +4,7 @@ netx-asm
 netx-asm.exe
 intel-source/
 intelligence-bss.inc
+test-tool/
+bin/
+*.bak
+install-scripts/*.log

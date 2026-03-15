@@ -6,6 +6,7 @@ BITS 64
 GLOBAL _start
 
 %include "../common/constants.inc"
+%include "../common/colors.inc"
 %include "../common/parse.inc"
 %include "../common/checksum.inc"
 %include "../common/packet.inc"
@@ -23,14 +24,20 @@ SECTION .data
 usage_msg   db "Usage: netrox-asm <target_ip> [-p port|start-end|-]", 10
             db "       [--rate N] [--iface IFACE] [--scan MODE]", 10
             db "       [--bench] [--os] [--stabilize] [--about] [--wizard] [--callback]", 10
+            db "  --no-color         disable color output", 10
             db "Scan modes: syn ack fin null xmas window maimon udp ping sar kis phantom callback", 10
 usage_len   equ $-usage_msg
 
-banner_msg  db "   _  __    __           _  __    ___   ______  ___", 10
-            db "  / |/ /__ / /________  | |/_/___/ _ | / __/  |/  /", 10
-            db " /    / -_) __/ __/ _ \\_>  </___/ __ |_\\ \\/ /|_/ / ", 10
-            db "/_/|_/\\__/\\__/_/  \\___/_/|_|   /_/ |_/___/_/  /_/  ", 10, 10
-banner_len  equ $-banner_msg
+banner_line  db "+----------------------------------------------------------+", 10
+banner_line_len equ $-banner_line
+banner_name  db "|  NetroX-ASM v"
+banner_name_len equ $-banner_name
+banner_pad1  db "                                       |", 10
+banner_pad1_len equ $-banner_pad1
+banner_desc  db "|  Pure x86_64 NASM Network Diagnostic Engine              |", 10
+banner_desc_len equ $-banner_desc
+banner_auth  db "|  github.com/voltsparx  |  Linux + Windows               |", 10
+banner_auth_len equ $-banner_auth
 
 about_msg   db "author : voltsparx", 10
             db "email  : voltsparx@gmail.com", 10
@@ -459,7 +466,9 @@ closed_msg      db " CLOSED", 10
 closed_len      equ $-closed_msg
 filtered_msg    db " FILTERED", 10
 filtered_len    equ $-filtered_msg
-open_ttl_msg    db " OPEN TTL="
+open_msg        db " OPEN"
+open_msg_len    equ $-open_msg
+open_ttl_msg    db " TTL="
 open_ttl_len    equ $-open_ttl_msg
 open_win_msg    db " WIN="
 open_win_len    equ $-open_win_msg
@@ -471,8 +480,14 @@ error_msg       db "ERROR", 10
 error_len       equ $-error_msg
 
 ; Summary output strings
+scan_complete_hdr db 10, "--- [ SCAN COMPLETE ] ---", 10, 0
+scan_complete_hdr_len equ $-scan_complete_hdr
 open_count_msg  db "OPEN COUNT: "
 open_count_len  equ $-open_count_msg
+filtered_count_msg db "FILTERED COUNT: "
+filtered_count_len equ $-filtered_count_msg
+closed_count_msg db "CLOSED COUNT: "
+closed_count_len equ $-closed_count_msg
 open_ports_msg  db "OPEN PORTS: "
 open_ports_len  equ $-open_ports_msg
 none_msg        db "none"
@@ -586,6 +601,8 @@ last_win        resw 1
 
 result_map      resb 8192
 open_count      resd 1
+filtered_count  resd 1
+closed_count    resd 1
 
 engine_id       resb 1
 scan_mode       resb 1
@@ -882,6 +899,7 @@ config_buf        resb 4096
 ; Additional flags
 wait_secs         resb 1
 banners_mode      resb 1
+no_color_flag     resb 1
 echo_mode         resb 1
 random_host_count resd 1
 version_enabled   resb 1
@@ -892,7 +910,29 @@ quiet_mode        resb 1
 ; ===========================================================================
 
 SECTION .text
+
+; -------------------------------------------------------------------
+; color_init
+; -------------------------------------------------------------------
+color_init:
+    sub  rsp, 16
+    mov  rax, SYS_IOCTL
+    mov  rdi, 1
+    mov  rsi, 0x5413
+    mov  rdx, rsp
+    syscall
+    test rax, rax
+    js   .no_tty
+    mov  byte [color_enabled], 1
+    jmp  .tty_done
+.no_tty:
+    mov  byte [color_enabled], 0
+.tty_done:
+    add  rsp, 16
+    ret
+
 _start:
+    call color_init
     xor r12d, r12d
 
     mov rbx, rsp
@@ -1417,19 +1457,32 @@ _start:
 .check_iR:
     ; -iR N
     cmp  byte [rdi], '-'
-    jne  .check_engine
+    jne  .check_no_color
     cmp  byte [rdi+1], 'i'
-    jne  .check_engine
+    jne  .check_no_color
     cmp  byte [rdi+2], 'R'
-    jne  .check_engine
+    jne  .check_no_color
     cmp  byte [rdi+3], 0
-    jne  .check_engine
+    jne  .check_no_color
     inc  rcx
     cmp  rcx, r13
     jae  .usage
     mov  rdi, [rbx+rcx*8]
     call parse_u32
     mov  [random_host_count], eax
+    jmp  .arg_next
+
+.check_no_color:
+    ; --no-color
+    cmp  byte [rdi+1], '-'
+    jne  .check_engine
+    cmp  dword [rdi+2], 'no-c'
+    jne  .check_engine
+    cmp  dword [rdi+6], 'olor'
+    jne  .check_engine
+    cmp  byte  [rdi+10], 0
+    jne  .check_engine
+    mov  byte [no_color_flag], 1
     jmp  .arg_next
 
 .check_engine:
@@ -1515,6 +1568,10 @@ _start:
 ; All args parsed - set up engine and start scan
 ; -------------------------------------------------------------------
 .ports_ready:
+    cmp byte [no_color_flag], 1
+    jne .color_flag_done
+    mov byte [color_enabled], 0
+.color_flag_done:
     cmp byte [config_enabled], 0
     je .skip_config
     call load_config_file
@@ -1572,9 +1629,7 @@ _start:
     ; Set engine based on scan_mode
     mov byte [engine_id], ENGINE_SYN
 
-    lea rsi, [banner_msg]
-    mov edx, banner_len
-    call buf_write
+    call print_banner
 
     ; Detect local source IP
     call get_local_ip
@@ -1973,6 +2028,7 @@ scan_loop_entry:
     call json_print_port
     mov al, 2
     call csv_print_port
+    inc dword [closed_count]
     cmp byte [stab_enabled], 0
     je .closed_no_stab
     inc dword [stab_recv]
@@ -1992,14 +2048,24 @@ scan_loop_entry:
     call json_print_port
     mov al, 3
     call csv_print_port
+    inc dword [filtered_count]
     cmp byte [stab_enabled], 0
     je .filtered_no_stab
     inc dword [stab_timeout]
 .filtered_no_stab:
     mov ax, cx
-    mov r9, filtered_msg
-    mov r10d, filtered_len
-    call write_result
+    call append_u16
+    call color_guard_check
+    jz .skip_filtered_color
+    COLOR_YELLOW
+.skip_filtered_color:
+    lea rsi, [filtered_msg]
+    mov edx, filtered_len
+    call buf_write
+    call color_guard_check
+    jz .skip_filtered_reset
+    COLOR_RESET
+.skip_filtered_reset:
     jmp .next_port
 
 .retry_again:
@@ -2296,6 +2362,17 @@ write_result:
 ; -------------------------------------------------------------------
 write_open_intel:
     call append_u16
+    call color_guard_check
+    jz .skip_open_color
+    COLOR_RED
+.skip_open_color:
+    lea rsi, [open_msg]
+    mov edx, open_msg_len
+    call buf_write
+    call color_guard_check
+    jz .skip_open_reset
+    COLOR_RESET
+.skip_open_reset:
     lea rsi, [open_ttl_msg]
     mov edx, open_ttl_len
     call buf_write
@@ -2350,14 +2427,79 @@ record_open:
     ret
 
 ; -------------------------------------------------------------------
+; color_guard_check
+; Returns ZF=1 if color should be skipped
+; -------------------------------------------------------------------
+color_guard_check:
+    cmp byte [json_mode], 1
+    je .skip_color
+    cmp byte [csv_mode], 1
+    je .skip_color
+    cmp byte [color_enabled], 0
+    je .skip_color
+    mov eax, 1
+    test eax, eax
+    ret
+.skip_color:
+    xor eax, eax
+    test eax, eax
+    ret
+
+; -------------------------------------------------------------------
 ; write_summary
 ; Prints open count and the list of open ports from result_map
 ; -------------------------------------------------------------------
 write_summary:
+    call color_guard_check
+    jz .skip_scan_hdr_color
+    COLOR_CYAN
+.skip_scan_hdr_color:
+    lea rsi, [scan_complete_hdr]
+    mov edx, scan_complete_hdr_len
+    call buf_write
+    call color_guard_check
+    jz .skip_scan_hdr_reset
+    COLOR_RESET
+.skip_scan_hdr_reset:
+
     lea rsi, [open_count_msg]
     mov edx, open_count_len
     call buf_write
+    call color_guard_check
+    jz .skip_open_count_color
+    COLOR_RED
+.skip_open_count_color:
     mov ax, [open_count]
+    call append_u16
+    call color_guard_check
+    jz .skip_open_count_reset
+    COLOR_RESET
+.skip_open_count_reset:
+    lea rsi, [newline_msg]
+    mov edx, newline_len
+    call buf_write
+
+    lea rsi, [filtered_count_msg]
+    mov edx, filtered_count_len
+    call buf_write
+    call color_guard_check
+    jz .skip_filtered_count_color
+    COLOR_YELLOW
+.skip_filtered_count_color:
+    mov ax, [filtered_count]
+    call append_u16
+    call color_guard_check
+    jz .skip_filtered_count_reset
+    COLOR_RESET
+.skip_filtered_count_reset:
+    lea rsi, [newline_msg]
+    mov edx, newline_len
+    call buf_write
+
+    lea rsi, [closed_count_msg]
+    mov edx, closed_count_len
+    call buf_write
+    mov ax, [closed_count]
     call append_u16
     lea rsi, [newline_msg]
     mov edx, newline_len
@@ -2465,12 +2607,48 @@ write_bench:
     ret
 
 ; -------------------------------------------------------------------
+; print_banner
+; -------------------------------------------------------------------
+print_banner:
+    lea rsi, [banner_line]
+    mov edx, banner_line_len
+    call buf_write
+    lea rsi, [banner_name]
+    mov edx, banner_name_len
+    call buf_write
+    mov ax, 1
+    call append_u16
+    mov byte [out_buf], '.'
+    lea rsi, [out_buf]
+    mov edx, 1
+    call buf_write
+    mov ax, 0
+    call append_u16
+    mov byte [out_buf], '.'
+    lea rsi, [out_buf]
+    mov edx, 1
+    call buf_write
+    mov ax, 0
+    call append_u16
+    lea rsi, [banner_pad1]
+    mov edx, banner_pad1_len
+    call buf_write
+    lea rsi, [banner_desc]
+    mov edx, banner_desc_len
+    call buf_write
+    lea rsi, [banner_auth]
+    mov edx, banner_auth_len
+    call buf_write
+    lea rsi, [banner_line]
+    mov edx, banner_line_len
+    call buf_write
+    ret
+
+; -------------------------------------------------------------------
 ; print_about
 ; -------------------------------------------------------------------
 print_about:
-    lea rsi, [banner_msg]
-    mov edx, banner_len
-    call buf_write
+    call print_banner
     lea rsi, [about_msg]
     mov edx, about_len
     call buf_write
@@ -2566,9 +2744,7 @@ is_wizard_mode:
 ; Returns eax=0 on success, 1 on failure/abort
 ; -------------------------------------------------------------------
 wizard_flow:
-    lea rsi, [banner_msg]
-    mov edx, banner_len
-    call buf_write
+    call print_banner
     lea rsi, [wizard_hdr]
     mov edx, wizard_hdr_len
     call buf_write

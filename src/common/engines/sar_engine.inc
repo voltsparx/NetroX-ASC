@@ -158,8 +158,16 @@ sar_check_guardrail:
 ; Prints sync alert and stops the scan.
 ; ------------------------------------------------------------
 sar_execute_sync:
+    call color_guard_check
+    jz .skip_sync_color
+    COLOR_YELLOW
+.skip_sync_color:
     lea  rsi, [sar_sync_msg]
     call .strlen_write
+    call color_guard_check
+    jz .skip_sync_reset
+    COLOR_RESET
+.skip_sync_reset:
     call flush_output
     jmp  .scan_done
 .strlen_write:
@@ -459,8 +467,16 @@ sar_print_result:
 ; Prints full cognitive map summary after scan
 ; ------------------------------------------------------------
 sar_print_summary:
+    call color_guard_check
+    jz .skip_sum_color
+    COLOR_CYAN
+.skip_sum_color:
     lea  rsi, [sar_sum_hdr]
     call .pstr
+    call color_guard_check
+    jz .skip_sum_reset
+    COLOR_RESET
+.skip_sum_reset:
 
     lea  rsi, [sar_sum_audit]
     call .pstr
@@ -531,15 +547,31 @@ sar_print_summary:
     mov  eax, [sar_count_syncs]
     test eax, eax
     jnz  .collapsing
+    call color_guard_check
+    jz .skip_stable_color
+    COLOR_GREEN
+.skip_stable_color:
     lea  rsi, [sar_status_stab]
     jmp  .print_status
 .collapsing:
+    call color_guard_check
+    jz .skip_collapse_color
+    COLOR_YELLOW
+.skip_collapse_color:
     lea  rsi, [sar_status_coll]
     jmp  .print_status
 .storm:
+    call color_guard_check
+    jz .skip_storm_color
+    COLOR_RED
+.skip_storm_color:
     lea  rsi, [sar_status_stor]
 .print_status:
     call .pstr
+    call color_guard_check
+    jz .skip_status_reset
+    COLOR_RESET
+.skip_status_reset:
     ret
 
 .pstr:
@@ -578,6 +610,10 @@ sar_init:
     mov  dword [sar_count_syncs],    0
     mov  dword [sar_count_total],    0
 
+    call color_guard_check
+    jz .skip_hdr_color
+    COLOR_CYAN
+.skip_hdr_color:
     lea  rsi, [sar_hdr_msg]
     xor  edx, edx
 .hdr_len:
@@ -597,6 +633,10 @@ sar_init:
     jmp  .end_len
 .end_done:
     call buf_write
+    call color_guard_check
+    jz .skip_hdr_reset
+    COLOR_RESET
+.skip_hdr_reset:
 
     call sar_baseline_probe
 

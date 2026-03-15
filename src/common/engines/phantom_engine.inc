@@ -160,6 +160,10 @@ tev_check_guardrail:
 ; tev_hard_stop
 ; ------------------------------------------------------------
 tev_hard_stop:
+    call color_guard_check
+    jz .skip_tev_color
+    COLOR_YELLOW
+.skip_tev_color:
     lea  rsi, [phantom_tev_alert]
     call .pstr
     lea  rsi, [phantom_tev_dev_msg]
@@ -177,6 +181,10 @@ tev_hard_stop:
     call .pstr
     inc  dword [phantom_count_tev]
     mov  byte [tev_triggered], 1
+    call color_guard_check
+    jz .skip_tev_reset
+    COLOR_RESET
+.skip_tev_reset:
     call flush_output
     jmp  .scan_done
 .pstr:
@@ -570,8 +578,16 @@ phantom_print_result:
 ; phantom_print_summary
 ; ------------------------------------------------------------
 phantom_print_summary:
+    call color_guard_check
+    jz .skip_sum_color
+    COLOR_CYAN
+.skip_sum_color:
     lea rsi, [phantom_sum_hdr]
     call .pstr
+    call color_guard_check
+    jz .skip_sum_reset
+    COLOR_RESET
+.skip_sum_reset:
     lea rsi, [phantom_sum_passive]
     call .pstr
     mov eax, [phantom_count_passive]
@@ -615,12 +631,28 @@ phantom_print_summary:
     call .pstr
     cmp byte [tev_triggered], 0
     jne .tev_bad
+    call color_guard_check
+    jz .skip_tev_ok_color
+    COLOR_GREEN
+.skip_tev_ok_color:
     lea rsi, [phantom_tev_ok_msg]
     call .pstr
+    call color_guard_check
+    jz .skip_tev_ok_reset
+    COLOR_RESET
+.skip_tev_ok_reset:
     ret
 .tev_bad:
+    call color_guard_check
+    jz .skip_tev_bad_color
+    COLOR_YELLOW
+.skip_tev_bad_color:
     lea rsi, [phantom_tev_bad_msg]
     call .pstr
+    call color_guard_check
+    jz .skip_tev_bad_reset
+    COLOR_RESET
+.skip_tev_bad_reset:
     ret
 .pstr:
     xor edx, edx
@@ -656,10 +688,18 @@ phantom_init:
     mov byte [tev_consecutive_to], 0
     mov byte [tev_history_idx], 0
 
+    call color_guard_check
+    jz .skip_hdr_color
+    COLOR_CYAN
+.skip_hdr_color:
     lea rsi, [phantom_hdr_msg]
     call .pstr
     lea rsi, [phantom_hdr_end]
     call .pstr
+    call color_guard_check
+    jz .skip_hdr_reset
+    COLOR_RESET
+.skip_hdr_reset:
 
     call phantom_passive_listen
     call phantom_idle_calibrate

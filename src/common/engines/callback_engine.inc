@@ -481,8 +481,16 @@ cb_fingerprint:
 ; cb_print_result
 ; ------------------------------------------------------------
 cb_print_result:
+    call color_guard_check
+    jz .skip_cb_prefix_color
+    COLOR_CYAN
+.skip_cb_prefix_color:
     lea  rsi, [cb_prefix_msg]
     call .pstr
+    call color_guard_check
+    jz .skip_cb_prefix_reset
+    COLOR_RESET
+.skip_cb_prefix_reset:
     movzx eax, byte [cb_src_ip]
     call append_u16
     call .dot
@@ -555,16 +563,32 @@ cb_print_result:
     call .pstr
     jmp  .cls_done
 .cls_silent:
+    call color_guard_check
+    jz .skip_silent_color
+    COLOR_YELLOW
+.skip_silent_color:
     lea  rsi, [cb_class_silent]
     call .pstr
+    call color_guard_check
+    jz .skip_silent_reset
+    COLOR_RESET
+.skip_silent_reset:
     jmp  .cls_done
 .cls_std:
     lea  rsi, [cb_class_std]
     call .pstr
     jmp  .cls_done
 .cls_resp:
+    call color_guard_check
+    jz .skip_resp_color
+    COLOR_GREEN
+.skip_resp_color:
     lea  rsi, [cb_class_resp]
     call .pstr
+    call color_guard_check
+    jz .skip_resp_reset
+    COLOR_RESET
+.skip_resp_reset:
 .cls_done:
 
     lea  rsi, [cb_lat_msg]
@@ -621,8 +645,16 @@ cb_print_result:
 ; cb_print_summary
 ; ------------------------------------------------------------
 cb_print_summary:
+    call color_guard_check
+    jz .skip_sum_color
+    COLOR_CYAN
+.skip_sum_color:
     lea rsi, [cb_sum_hdr]
     call .pstr
+    call color_guard_check
+    jz .skip_sum_reset
+    COLOR_RESET
+.skip_sum_reset:
     lea rsi, [cb_sum_total]
     call .pstr
     mov eax, [cb_count_total]
@@ -765,8 +797,16 @@ cb_init:
     mov byte [cb_enabled], 1
     mov byte [cb_proto], 0
     mov dword [cb_response_timeout], CB_RESPONSE_TIMEOUT_MS
+    call color_guard_check
+    jz .skip_hdr_color
+    COLOR_CYAN
+.skip_hdr_color:
     lea rsi, [cb_hdr_msg]
     call .pstr
+    call color_guard_check
+    jz .skip_hdr_reset
+    COLOR_RESET
+.skip_hdr_reset:
     lea rsi, [cb_proto_msg]
     call .pstr
     lea rsi, [cb_proto_dns_str]

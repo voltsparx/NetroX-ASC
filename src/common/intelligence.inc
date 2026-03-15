@@ -1118,15 +1118,31 @@ intel_print_record:
     ; IPID annotations
     cmp  byte [intel_fp_ipid_class], IPID_INCREMENTAL
     jne  .no_zombie
+    call color_guard_check
+    jz .skip_zombie_color
+    COLOR_YELLOW
+.skip_zombie_color:
     lea  rsi, [intel_lbl_zombie]
     call .print_cstr
+    call color_guard_check
+    jz .skip_zombie_reset
+    COLOR_RESET
+.skip_zombie_reset:
 .no_zombie:
 
     ; LB check annotation
     call intel_lb_check
     jz   .no_lb
+    call color_guard_check
+    jz .skip_lb_color
+    COLOR_YELLOW
+.skip_lb_color:
     lea  rsi, [intel_lbl_lb]
     call .print_cstr
+    call color_guard_check
+    jz .skip_lb_reset
+    COLOR_RESET
+.skip_lb_reset:
 .no_lb:
 
     ; Newline
