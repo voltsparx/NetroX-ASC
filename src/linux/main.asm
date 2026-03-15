@@ -28,8 +28,156 @@ usage_msg   db "Usage: netrox-asm <target_ip> [-p port|start-end|-]", 10
             db "  --zombie <ip>      idle scan zombie host", 10
             db "  --zombie-port <n>  zombie probe port", 10
             db "  --ftp-proxy <ip:port>  ftp bounce proxy", 10
-            db "Scan modes: syn ack fin null xmas window maimon udp ping sar kis phantom callback connect idle iproto pingsweep list rpc sctpinit sctpecho ftp script aggressive seq icmp_ts icmp_nm arp", 10
+            db "  --help             show full help and scan types", 10
+            db "  --explain          explain selected scan or flags", 10
 usage_len   equ $-usage_msg
+
+help_hdr    db "==================== NetroX-ASM Help ====================", 10, 0
+help_cmds   db "Commands:", 10
+            db "  --scan <mode>      select scan mode", 10
+            db "  -sS/-sA/-sF/-sN/-sX/-sW/-sM  nmap flag scans", 10
+            db "  -sU               UDP scan", 10
+            db "  -sT               TCP connect scan", 10
+            db "  -sI               idle/zombie scan (use --zombie)", 10
+            db "  -sO               IP protocol scan", 10
+            db "  -sn               ping sweep", 10
+            db "  -sL               list scan (no packets)", 10
+            db "  -sR               RPC scan", 10
+            db "  -sY               SCTP INIT", 10
+            db "  -sZ               SCTP COOKIE-ECHO", 10
+            db "  -b <ip:port>       FTP bounce proxy", 10
+            db "  -sC               script probes after scan", 10
+            db "  -A                aggressive (OS+version+script+trace)", 10
+            db "  -r                sequential scan order", 10
+            db "  -PP               ICMP timestamp", 10
+            db "  -PM               ICMP netmask", 10
+            db "  -PR               ARP scan", 10
+            db "  -O                OS detection", 10
+            db "  -sV               version/banners", 10
+            db "  --rate N          packets/sec (0=unlimited)", 10
+            db "  -p <n|a-b|-|list>  ports", 10
+            db "  --top-ports <n>    top ports list", 10
+            db "  -T0..-T5           timing templates", 10
+            db "  --json / --csv     output formats", 10
+            db "  --output <file>    write output to file", 10
+            db "  --retries <n>      filtered retry count", 10
+            db "  --stabilize        adaptive rate control", 10
+            db "  --bench            performance summary", 10
+            db "  --callback         enable callback-ping secondary", 10
+            db "  --wait <n>          wait seconds after scan", 10
+            db "  --echo             print config and exit", 10
+            db "  --about            banner + info", 10
+            db "  --wizard           interactive wizard", 10
+            db "  --help             full help", 10
+            db "  --explain          explain current mode/flags", 10, 0
+help_cmds_len equ $-help_cmds
+
+help_scans  db "Scan modes:", 10
+            db "  syn ack fin null xmas window maimon udp ping", 10
+            db "  sar kis phantom callback connect idle iproto pingsweep list", 10
+            db "  rpc sctpinit sctpecho ftp script aggressive seq icmp_ts icmp_nm arp", 10, 0
+help_scans_len equ $-help_scans
+
+help_examples db "Examples:", 10
+              db "  netrox-asm 192.168.1.1 --scan syn -p 1-1000", 10
+              db "  netrox-asm 10.0.0.0/24 -sn", 10
+              db "  netrox-asm 192.168.1.10 -sT -p 22,80,443", 10
+              db "  netrox-asm --explain --scan xmas", 10
+              db "  netrox-asm 192.168.1.1 -sU -p 53", 10
+              db "  netrox-asm 192.168.1.1 -sI --zombie 10.0.0.5", 10
+              db "  netrox-asm 192.168.1.1 -sO", 10
+              db "  netrox-asm 192.168.1.0/24 -sL", 10
+              db "  netrox-asm 192.168.1.1 -sR", 10
+              db "  netrox-asm 192.168.1.1 -sY -p 3868", 10
+              db "  netrox-asm 192.168.1.1 -sZ -p 3868", 10
+              db "  netrox-asm 192.168.1.1 -b 10.0.0.2:21", 10
+              db "  netrox-asm 192.168.1.1 -sC", 10
+              db "  netrox-asm 192.168.1.1 -A", 10
+              db "  netrox-asm 192.168.1.1 -r -p 1-1024", 10
+              db "  netrox-asm 192.168.1.1 -PP", 10
+              db "  netrox-asm 192.168.1.1 -PM", 10
+              db "  netrox-asm 192.168.1.0/24 -PR", 10
+              db "===========================================================", 10, 0
+help_examples_len equ $-help_examples
+
+explain_hdr db "=================== NetroX-ASM Explain ===================", 10, 0
+explain_tail db "===========================================================", 10, 0
+explain_flags_hdr db "Flags:", 10, 0
+explain_flags_body db "  --rate N          packets/sec (0=unlimited)", 10
+                  db "  -p <n|a-b|-|list>  ports", 10
+                  db "  --top-ports <n>    top ports list", 10
+                  db "  -T0..-T5           timing templates", 10
+                  db "  --json / --csv     output formats", 10
+                  db "  --output <file>    write output to file", 10
+                  db "  --retries <n>      filtered retry count", 10
+                  db "  --stabilize        adaptive rate control", 10
+                  db "  --bench            performance summary", 10
+                  db "  --os / -O          OS fingerprinting", 10
+                  db "  --callback         callback-ping secondary", 10
+                  db "  --wait <n>         wait seconds after scan", 10
+                  db "  --echo             print config and exit", 10
+                  db "  --wizard           interactive wizard", 10
+                  db "  --no-color         disable color output", 10, 0
+
+ex_syn   db "SYN scan: sends TCP SYN and interprets SYN-ACK/RST.", 10, 0
+ex_ack   db "ACK scan: maps firewall rules via ACK responses.", 10, 0
+ex_fin   db "FIN scan: FIN-only probe, RST=closed, silence=open|filtered.", 10, 0
+ex_null  db "NULL scan: no flags, RST=closed, silence=open|filtered.", 10, 0
+ex_xmas  db "XMAS scan: FIN+PSH+URG, RST=closed, silence=open|filtered.", 10, 0
+ex_win   db "WINDOW scan: ACK probe, window size hints open/closed.", 10, 0
+ex_maim  db "MAIMON scan: FIN+ACK, RST=closed, silence=open|filtered.", 10, 0
+ex_udp   db "UDP scan: UDP probe, ICMP unreachable=closed.", 10, 0
+ex_ping  db "PING scan: ICMP echo to check host liveness.", 10, 0
+ex_sar   db "SAR scan: cognitive resonance scan (advanced).", 10, 0
+ex_kis   db "KIS scan: impedance classification (advanced).", 10, 0
+ex_ph    db "PHANTOM scan: passive+ACK window probing (advanced).", 10, 0
+ex_cb    db "CALLBACK scan: listens for inbound probes and responds.", 10, 0
+ex_conn  db "CONNECT scan: OS TCP connect, full handshake.", 10, 0
+ex_idle  db "IDLE scan: zombie IPID delta scan (requires --zombie).", 10, 0
+ex_ipr   db "IPROTO scan: probes IP protocol numbers 0-255.", 10, 0
+ex_psw   db "PINGSWEEP: ICMP+SYN+ACK host discovery on ranges.", 10, 0
+ex_list  db "LIST scan: prints targets only, no packets sent.", 10, 0
+ex_rpc   db "RPC scan: probes portmapper (111) to enumerate services.", 10, 0
+ex_syi   db "SCTP INIT scan: SCTP INIT/ACK/ABORT classification.", 10, 0
+ex_sze   db "SCTP COOKIE-ECHO scan: SCTP cookie probes.", 10, 0
+ex_ftp   db "FTP bounce scan: uses FTP proxy to scan target ports.", 10, 0
+ex_scr   db "SCRIPT scan: run service probes after open ports.", 10, 0
+ex_ag    db "AGGRESSIVE scan: enables OS+version+script+traceroute.", 10, 0
+ex_seq   db "SEQUENTIAL scan: scans ports in order, no permutation.", 10, 0
+ex_ts    db "ICMP timestamp: ICMP time probe (type 13).", 10, 0
+ex_nm    db "ICMP netmask: ICMP netmask probe (type 17).", 10, 0
+ex_arp   db "ARP scan: local subnet ARP discovery (layer 2).", 10, 0
+
+ex_fmt1  db "Example:", 10, "  netrox-asm 10.0.0.1 --scan ", 0
+ex_fmt2  db 10, 0
+scan_name_syn db "syn", 0
+scan_name_ack db "ack", 0
+scan_name_fin db "fin", 0
+scan_name_null db "null", 0
+scan_name_xmas db "xmas", 0
+scan_name_window db "window", 0
+scan_name_maimon db "maimon", 0
+scan_name_udp db "udp", 0
+scan_name_ping db "ping", 0
+scan_name_sar db "sar", 0
+scan_name_kis db "kis", 0
+scan_name_phantom db "phantom", 0
+scan_name_callback db "callback", 0
+scan_name_connect db "connect", 0
+scan_name_idle db "idle", 0
+scan_name_iproto db "iproto", 0
+scan_name_pingsweep db "pingsweep", 0
+scan_name_list db "list", 0
+scan_name_rpc db "rpc", 0
+scan_name_sctpinit db "sctpinit", 0
+scan_name_sctpecho db "sctpecho", 0
+scan_name_ftp db "ftp", 0
+scan_name_script db "script", 0
+scan_name_aggressive db "aggressive", 0
+scan_name_seq db "seq", 0
+scan_name_icmp_ts db "icmp_ts", 0
+scan_name_icmp_nm db "icmp_nm", 0
+scan_name_arp db "arp", 0
 
 banner_line  db "+----------------------------------------------------------+", 10
 banner_line_len equ $-banner_line
@@ -908,6 +1056,8 @@ random_host_count resd 1
 version_enabled   resb 1
 quiet_mode        resb 1
 aggressive_mode   resb 1
+help_mode         resb 1
+explain_mode      resb 1
 
 ; Additional scan engine state (nmap parity set)
 connect_fd        resq 1
@@ -1175,20 +1325,186 @@ _start:
 .check_scan:
     ; --scan MODE
     cmp byte [rdi+1], '-'
-    jne .check_discovery
+    jne .check_nmap
     lea rsi, [rdi+2]
     cmp dword [rsi], 'scan'
-    jne .check_discovery
+    jne .check_nmap
     cmp byte [rsi+4], 0
-    jne .check_discovery
+    jne .check_nmap
     inc rcx
     cmp rcx, r13
     jae .usage
     mov rdi, [rbx+rcx*8]
     call parse_scan_mode
     test al, al
+    jnz .scan_ok
+    mov rsi, rdi
+    cmp dword [rsi], 'SCAN'
+    jne .scan_lower
+    cmp byte [rsi+4], '_'
+    jne .scan_lower
+    lea rdi, [rsi+5]
+    call parse_scan_mode
+    test al, al
     jz .usage
+    jmp .scan_ok
+.scan_lower:
+    cmp dword [rsi], 'scan'
+    jne .usage
+    cmp byte [rsi+4], '_'
+    jne .usage
+    lea rdi, [rsi+5]
+    call parse_scan_mode
+    test al, al
+    jz .usage
+.scan_ok:
     mov [scan_mode], al
+    jmp .arg_next
+
+.check_nmap:
+    ; nmap-friendly aliases
+    cmp byte [rdi], '-'
+    jne .check_discovery
+    cmp byte [rdi+1], 's'
+    jne .check_nmap_single
+    mov al, [rdi+2]
+    test al, al
+    jz .check_discovery
+    cmp al, 'S'
+    je .set_syn
+    cmp al, 'A'
+    je .set_ack
+    cmp al, 'F'
+    je .set_fin
+    cmp al, 'N'
+    je .set_null
+    cmp al, 'X'
+    je .set_xmas
+    cmp al, 'W'
+    je .set_window
+    cmp al, 'M'
+    je .set_maimon
+    cmp al, 'U'
+    je .set_udp
+    cmp al, 'T'
+    je .set_connect
+    cmp al, 'I'
+    je .set_idle
+    cmp al, 'O'
+    je .set_iproto
+    cmp al, 'L'
+    je .set_list
+    cmp al, 'R'
+    je .set_rpc
+    cmp al, 'Y'
+    je .set_sctp_init
+    cmp al, 'Z'
+    je .set_sctp_echo
+    cmp al, 'C'
+    je .set_script
+    cmp al, 'V'
+    je .set_version
+    cmp al, 'n'
+    je .set_pingsweep
+    cmp al, 'P'
+    je .set_ping
+    jmp .check_discovery
+.set_syn:
+    mov byte [scan_mode], SCAN_SYN
+    jmp .arg_next
+.set_ack:
+    mov byte [scan_mode], SCAN_ACK
+    jmp .arg_next
+.set_fin:
+    mov byte [scan_mode], SCAN_FIN
+    jmp .arg_next
+.set_null:
+    mov byte [scan_mode], SCAN_NULL
+    jmp .arg_next
+.set_xmas:
+    mov byte [scan_mode], SCAN_XMAS
+    jmp .arg_next
+.set_window:
+    mov byte [scan_mode], SCAN_WINDOW
+    jmp .arg_next
+.set_maimon:
+    mov byte [scan_mode], SCAN_MAIMON
+    jmp .arg_next
+.set_udp:
+    mov byte [scan_mode], SCAN_UDP
+    jmp .arg_next
+.set_connect:
+    mov byte [scan_mode], SCAN_CONNECT
+    jmp .arg_next
+.set_idle:
+    mov byte [scan_mode], SCAN_IDLE
+    jmp .arg_next
+.set_iproto:
+    mov byte [scan_mode], SCAN_IPROTO
+    jmp .arg_next
+.set_list:
+    mov byte [scan_mode], SCAN_LIST
+    jmp .arg_next
+.set_rpc:
+    mov byte [scan_mode], SCAN_RPC
+    jmp .arg_next
+.set_sctp_init:
+    mov byte [scan_mode], SCAN_SCTP_INIT
+    jmp .arg_next
+.set_sctp_echo:
+    mov byte [scan_mode], SCAN_SCTP_ECHO
+    jmp .arg_next
+.set_script:
+    mov byte [scan_mode], SCAN_SCRIPT
+    jmp .arg_next
+.set_version:
+    mov byte [version_enabled], 1
+    jmp .arg_next
+.set_pingsweep:
+    mov byte [scan_mode], SCAN_PINGSWEEP
+    jmp .arg_next
+.set_ping:
+    mov byte [scan_mode], SCAN_PING
+    jmp .arg_next
+
+.check_nmap_single:
+    cmp byte [rdi+1], 'A'
+    je .set_aggressive
+    cmp byte [rdi+1], 'O'
+    je .set_os
+    cmp byte [rdi+1], 'r'
+    je .set_seq
+    cmp byte [rdi+1], 'b'
+    je .set_bounce
+    cmp byte [rdi+1], 'P'
+    jne .check_discovery
+    cmp byte [rdi+2], 'P'
+    je .set_icmp_ts
+    cmp byte [rdi+2], 'M'
+    je .set_icmp_nm
+    cmp byte [rdi+2], 'R'
+    je .set_arp
+    jmp .check_discovery
+.set_aggressive:
+    mov byte [scan_mode], SCAN_AGGRESSIVE
+    jmp .arg_next
+.set_os:
+    mov byte [os_enabled], 1
+    jmp .arg_next
+.set_seq:
+    mov byte [scan_mode], SCAN_SEQ
+    jmp .arg_next
+.set_bounce:
+    mov byte [scan_mode], SCAN_FTP_BOUNCE
+    jmp .arg_next
+.set_icmp_ts:
+    mov byte [scan_mode], SCAN_ICMP_TS
+    jmp .arg_next
+.set_icmp_nm:
+    mov byte [scan_mode], SCAN_ICMP_NM
+    jmp .arg_next
+.set_arp:
+    mov byte [scan_mode], SCAN_ARP
     jmp .arg_next
 
 .check_zombie:
@@ -1528,17 +1844,41 @@ _start:
 .check_wait:
     ; --wait N
     cmp  byte [rdi+1], '-'
-    jne  .check_banners
+    jne  .check_help
     cmp  dword [rdi+2], 'wait'
-    jne  .check_banners
+    jne  .check_help
     cmp  byte  [rdi+6], 0
-    jne  .check_banners
+    jne  .check_help
     inc  rcx
     cmp  rcx, r13
     jae  .usage
     mov  rdi, [rbx+rcx*8]
     call parse_u32
     mov  [wait_secs], al
+    jmp  .arg_next
+
+.check_help:
+    ; --help
+    cmp  byte [rdi+1], '-'
+    jne  .check_explain
+    cmp  dword [rdi+2], 'help'
+    jne  .check_explain
+    cmp  byte  [rdi+6], 0
+    jne  .check_explain
+    mov  byte [help_mode], 1
+    jmp  .arg_next
+
+.check_explain:
+    ; --explain
+    cmp  byte [rdi+1], '-'
+    jne  .check_banners
+    cmp  dword [rdi+2], 'expl'
+    jne  .check_banners
+    cmp  dword [rdi+6], 'ain'
+    jne  .check_banners
+    cmp  byte  [rdi+10], 0
+    jne  .check_banners
+    mov  byte [explain_mode], 1
     jmp  .arg_next
 
 .check_banners:
@@ -1693,6 +2033,15 @@ _start:
     jne .color_flag_done
     mov byte [color_enabled], 0
 .color_flag_done:
+    cmp byte [help_mode], 0
+    je .check_explain_mode
+    call print_help
+    jmp .exit
+.check_explain_mode:
+    cmp byte [explain_mode], 0
+    je .skip_config
+    call explain_print
+    jmp .exit
     cmp byte [config_enabled], 0
     je .skip_config
     call load_config_file
@@ -2776,6 +3125,307 @@ print_banner:
     call buf_write
     lea rsi, [banner_line]
     mov edx, banner_line_len
+    call buf_write
+    ret
+
+; -------------------------------------------------------------------
+; print_help
+; -------------------------------------------------------------------
+print_help:
+    lea rsi, [help_hdr]
+    call print_cstr
+    lea rsi, [help_cmds]
+    call print_cstr
+    lea rsi, [help_scans]
+    call print_cstr
+    lea rsi, [help_examples]
+    call print_cstr
+    call flush_output
+    ret
+
+; -------------------------------------------------------------------
+; explain_print
+; -------------------------------------------------------------------
+explain_print:
+    lea rsi, [explain_hdr]
+    call print_cstr
+    movzx eax, byte [scan_mode]
+    test al, al
+    jz .explain_flags
+    cmp al, SCAN_SYN
+    je .ex_syn
+    cmp al, SCAN_ACK
+    je .ex_ack
+    cmp al, SCAN_FIN
+    je .ex_fin
+    cmp al, SCAN_NULL
+    je .ex_null
+    cmp al, SCAN_XMAS
+    je .ex_xmas
+    cmp al, SCAN_WINDOW
+    je .ex_win
+    cmp al, SCAN_MAIMON
+    je .ex_maim
+    cmp al, SCAN_UDP
+    je .ex_udp
+    cmp al, SCAN_PING
+    je .ex_ping
+    cmp al, SCAN_SAR
+    je .ex_sar
+    cmp al, SCAN_KIS
+    je .ex_kis
+    cmp al, SCAN_PHANTOM
+    je .ex_ph
+    cmp al, SCAN_CALLBACK
+    je .ex_cb
+    cmp al, SCAN_CONNECT
+    je .ex_conn
+    cmp al, SCAN_IDLE
+    je .ex_idle
+    cmp al, SCAN_IPROTO
+    je .ex_ipr
+    cmp al, SCAN_PINGSWEEP
+    je .ex_psw
+    cmp al, SCAN_LIST
+    je .ex_list
+    cmp al, SCAN_RPC
+    je .ex_rpc
+    cmp al, SCAN_SCTP_INIT
+    je .ex_syi
+    cmp al, SCAN_SCTP_ECHO
+    je .ex_sze
+    cmp al, SCAN_FTP_BOUNCE
+    je .ex_ftp
+    cmp al, SCAN_SCRIPT
+    je .ex_scr
+    cmp al, SCAN_AGGRESSIVE
+    je .ex_ag
+    cmp al, SCAN_SEQ
+    je .ex_seq
+    cmp al, SCAN_ICMP_TS
+    je .ex_ts
+    cmp al, SCAN_ICMP_NM
+    je .ex_nm
+    cmp al, SCAN_ARP
+    je .ex_arp
+    jmp .explain_flags
+
+.ex_syn:  lea rsi, [ex_syn]  ; fallthrough to print
+    jmp .ex_print
+.ex_ack:  lea rsi, [ex_ack]
+    jmp .ex_print
+.ex_fin:  lea rsi, [ex_fin]
+    jmp .ex_print
+.ex_null: lea rsi, [ex_null]
+    jmp .ex_print
+.ex_xmas: lea rsi, [ex_xmas]
+    jmp .ex_print
+.ex_win:  lea rsi, [ex_win]
+    jmp .ex_print
+.ex_maim: lea rsi, [ex_maim]
+    jmp .ex_print
+.ex_udp:  lea rsi, [ex_udp]
+    jmp .ex_print
+.ex_ping: lea rsi, [ex_ping]
+    jmp .ex_print
+.ex_sar:  lea rsi, [ex_sar]
+    jmp .ex_print
+.ex_kis:  lea rsi, [ex_kis]
+    jmp .ex_print
+.ex_ph:   lea rsi, [ex_ph]
+    jmp .ex_print
+.ex_cb:   lea rsi, [ex_cb]
+    jmp .ex_print
+.ex_conn: lea rsi, [ex_conn]
+    jmp .ex_print
+.ex_idle: lea rsi, [ex_idle]
+    jmp .ex_print
+.ex_ipr:  lea rsi, [ex_ipr]
+    jmp .ex_print
+.ex_psw:  lea rsi, [ex_psw]
+    jmp .ex_print
+.ex_list: lea rsi, [ex_list]
+    jmp .ex_print
+.ex_rpc:  lea rsi, [ex_rpc]
+    jmp .ex_print
+.ex_syi:  lea rsi, [ex_syi]
+    jmp .ex_print
+.ex_sze:  lea rsi, [ex_sze]
+    jmp .ex_print
+.ex_ftp:  lea rsi, [ex_ftp]
+    jmp .ex_print
+.ex_scr:  lea rsi, [ex_scr]
+    jmp .ex_print
+.ex_ag:   lea rsi, [ex_ag]
+    jmp .ex_print
+.ex_seq:  lea rsi, [ex_seq]
+    jmp .ex_print
+.ex_ts:   lea rsi, [ex_ts]
+    jmp .ex_print
+.ex_nm:   lea rsi, [ex_nm]
+    jmp .ex_print
+.ex_arp:  lea rsi, [ex_arp]
+    jmp .ex_print
+
+.ex_print:
+    call print_cstr
+    lea rsi, [ex_fmt1]
+    call print_cstr
+    call explain_print_scan_name
+    lea rsi, [ex_fmt2]
+    call print_cstr
+    jmp .explain_tail
+
+.explain_flags:
+    lea rsi, [help_cmds]
+    call print_cstr
+    lea rsi, [help_scans]
+    call print_cstr
+    lea rsi, [explain_flags_hdr]
+    call print_cstr
+    lea rsi, [explain_flags_body]
+    call print_cstr
+
+.explain_tail:
+    lea rsi, [explain_tail]
+    call print_cstr
+    call flush_output
+    ret
+
+; -------------------------------------------------------------------
+; explain_print_scan_name
+; Uses scan_mode to print name
+; -------------------------------------------------------------------
+explain_print_scan_name:
+    movzx eax, byte [scan_mode]
+    cmp al, SCAN_SYN
+    je .syn
+    cmp al, SCAN_ACK
+    je .ack
+    cmp al, SCAN_FIN
+    je .fin
+    cmp al, SCAN_NULL
+    je .null
+    cmp al, SCAN_XMAS
+    je .xmas
+    cmp al, SCAN_WINDOW
+    je .window
+    cmp al, SCAN_MAIMON
+    je .maimon
+    cmp al, SCAN_UDP
+    je .udp
+    cmp al, SCAN_PING
+    je .ping
+    cmp al, SCAN_SAR
+    je .sar
+    cmp al, SCAN_KIS
+    je .kis
+    cmp al, SCAN_PHANTOM
+    je .phantom
+    cmp al, SCAN_CALLBACK
+    je .callback
+    cmp al, SCAN_CONNECT
+    je .connect
+    cmp al, SCAN_IDLE
+    je .idle
+    cmp al, SCAN_IPROTO
+    je .iproto
+    cmp al, SCAN_PINGSWEEP
+    je .pingsweep
+    cmp al, SCAN_LIST
+    je .list
+    cmp al, SCAN_RPC
+    je .rpc
+    cmp al, SCAN_SCTP_INIT
+    je .sctpinit
+    cmp al, SCAN_SCTP_ECHO
+    je .sctpecho
+    cmp al, SCAN_FTP_BOUNCE
+    je .ftp
+    cmp al, SCAN_SCRIPT
+    je .script
+    cmp al, SCAN_AGGRESSIVE
+    je .aggressive
+    cmp al, SCAN_SEQ
+    je .seq
+    cmp al, SCAN_ICMP_TS
+    je .ts
+    cmp al, SCAN_ICMP_NM
+    je .nm
+    cmp al, SCAN_ARP
+    je .arp
+    ret
+.syn:      lea rsi, [scan_name_syn]      ; fallthrough
+    jmp .print
+.ack:      lea rsi, [scan_name_ack]
+    jmp .print
+.fin:      lea rsi, [scan_name_fin]
+    jmp .print
+.null:     lea rsi, [scan_name_null]
+    jmp .print
+.xmas:     lea rsi, [scan_name_xmas]
+    jmp .print
+.window:   lea rsi, [scan_name_window]
+    jmp .print
+.maimon:   lea rsi, [scan_name_maimon]
+    jmp .print
+.udp:      lea rsi, [scan_name_udp]
+    jmp .print
+.ping:     lea rsi, [scan_name_ping]
+    jmp .print
+.sar:      lea rsi, [scan_name_sar]
+    jmp .print
+.kis:      lea rsi, [scan_name_kis]
+    jmp .print
+.phantom:  lea rsi, [scan_name_phantom]
+    jmp .print
+.callback: lea rsi, [scan_name_callback]
+    jmp .print
+.connect:  lea rsi, [scan_name_connect]
+    jmp .print
+.idle:     lea rsi, [scan_name_idle]
+    jmp .print
+.iproto:   lea rsi, [scan_name_iproto]
+    jmp .print
+.pingsweep: lea rsi, [scan_name_pingsweep]
+    jmp .print
+.list:     lea rsi, [scan_name_list]
+    jmp .print
+.rpc:      lea rsi, [scan_name_rpc]
+    jmp .print
+.sctpinit: lea rsi, [scan_name_sctpinit]
+    jmp .print
+.sctpecho: lea rsi, [scan_name_sctpecho]
+    jmp .print
+.ftp:      lea rsi, [scan_name_ftp]
+    jmp .print
+.script:   lea rsi, [scan_name_script]
+    jmp .print
+.aggressive: lea rsi, [scan_name_aggressive]
+    jmp .print
+.seq:      lea rsi, [scan_name_seq]
+    jmp .print
+.ts:       lea rsi, [scan_name_icmp_ts]
+    jmp .print
+.nm:       lea rsi, [scan_name_icmp_nm]
+    jmp .print
+.arp:      lea rsi, [scan_name_arp]
+.print:
+    call print_cstr
+    ret
+
+; -------------------------------------------------------------------
+; print_cstr
+; rsi -> null-terminated
+; -------------------------------------------------------------------
+print_cstr:
+    xor edx, edx
+.c_len:
+    cmp byte [rsi+rdx], 0
+    je .c_done
+    inc edx
+    jmp .c_len
+.c_done:
     call buf_write
     ret
 
