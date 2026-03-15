@@ -150,6 +150,7 @@ ex_arp   db "ARP scan: local subnet ARP discovery (layer 2).", 10, 0
 
 ex_fmt1  db "Example:", 10, "  netrox-asm 10.0.0.1 --scan ", 0
 ex_fmt2  db 10, 0
+webxml_url_str db "https://nmap.org/svn/docs/nmap.xsl", 0
 scan_name_syn db "syn", 0
 scan_name_ack db "ack", 0
 scan_name_fin db "fin", 0
@@ -1059,6 +1060,109 @@ aggressive_mode   resb 1
 help_mode         resb 1
 explain_mode      resb 1
 
+; --- Target specification ---
+iL_mode             resb 1
+iL_file_path        resq 1
+exclude_list        resd 256
+exclude_count       resw 1
+excludefile_path    resq 1
+
+; --- Host discovery ---
+skip_discovery      resb 1
+ping_only_mode      resb 1
+disc_icmp_type      resb 1
+disc_tcp_mode       resb 1
+disc_tcp_port       resw 1
+disc_udp_port       resw 1
+disc_proto_list     resb 8
+disc_proto_count    resb 1
+no_dns              resb 1
+force_dns           resb 1
+dns_server_list     resd 4
+dns_server_count    resb 1
+system_dns          resb 1
+traceroute_mode     resb 1
+
+; --- Port specification ---
+excl_port_list      resw 256
+excl_port_count     resw 1
+fast_mode           resb 1
+sequential_mode     resb 1
+port_ratio_mode     resb 1
+port_ratio_val      resd 1
+
+; --- Version detection ---
+version_intensity   resb 1
+version_trace       resb 1
+
+; --- Script engine ---
+script_default_mode resb 1
+script_name_ptr     resq 1
+script_args_ptr     resq 1
+script_args_file    resq 1
+script_trace        resb 1
+script_help_mode    resb 1
+script_help_name    resq 1
+
+; --- Timing ---
+timing_template     resb 1
+min_rate            resd 1
+max_scan_delay_us   resd 1
+min_parallel        resw 1
+max_parallel        resw 1
+min_rtt_timeout     resd 1
+max_rtt_timeout     resd 1
+initial_rtt_timeout resd 1
+host_timeout_us     resq 1
+
+; --- Packet crafting / evasion ---
+frag_mode           resb 1
+frag_mtu            resw 1
+decoy_list          resd 8
+decoy_count         resb 1
+decoy_me_pos        resb 1
+spoof_src_ip        resd 1
+custom_ttl          resb 1
+badsum_mode         resb 1
+custom_data         resb 64
+custom_data_len     resb 1
+random_data_len     resb 1
+ip_options_data     resb 40
+ip_options_len      resb 1
+proxy_list          resq 4
+proxy_count         resb 1
+proxy_mode          resb 1
+spoof_mac_addr      resb 6
+spoof_mac_mode      resb 1
+send_eth_mode       resb 1
+
+; --- Output files ---
+oN_path             resq 1
+oN_fd               resd 1
+oX_path             resq 1
+oX_fd               resd 1
+oG_path             resq 1
+oG_fd               resd 1
+oS_path             resq 1
+oS_fd               resd 1
+oA_base             resq 1
+verbosity           resb 1
+debug_level         resb 1
+reason_mode         resb 1
+packet_trace        resb 1
+iflist_mode         resb 1
+append_output       resb 1
+noninteractive      resb 1
+stylesheet_path     resq 1
+no_stylesheet       resb 1
+
+; --- Misc ---
+ipv6_mode           resb 1
+version_mode        resb 1
+datadir_path        resq 1
+assume_privileged   resb 1
+assume_unprivileged resb 1
+
 ; Additional scan engine state (nmap parity set)
 connect_fd        resq 1
 connect_timeo     resb 1
@@ -1129,6 +1233,16 @@ color_init:
     ret
 
 _start:
+    mov  byte [version_intensity], 7
+    mov  word [disc_tcp_port], 80
+    mov  word [disc_udp_port], 40125
+    mov  byte [disc_icmp_type], 8
+    mov  word [min_parallel], 1
+    mov  word [max_parallel], 64
+    mov  dword [min_rtt_timeout], 100000
+    mov  dword [max_rtt_timeout], 10000000
+    mov  dword [initial_rtt_timeout], 1000000
+    mov  byte [decoy_me_pos], 0xFF
     call color_init
     xor r12d, r12d
 
@@ -1204,6 +1318,7 @@ _start:
     ja .check_p
     sub al, '0'
     mov [timing_level], al
+    mov [timing_template], al
     ; map timing level to rate_value
     cmp al, 0
     jne .t1
@@ -1936,7 +2051,7 @@ _start:
 .check_no_color:
     ; --no-color
     cmp  byte [rdi+1], '-'
-    jne  .check_engine
+    jne  .check_parity_flags
     cmp  dword [rdi+2], 'no-c'
     jne  .check_engine
     cmp  dword [rdi+6], 'olor'
@@ -1944,6 +2059,400 @@ _start:
     cmp  byte  [rdi+10], 0
     jne  .check_engine
     mov  byte [no_color_flag], 1
+    jmp  .arg_next
+
+.check_parity_flags:
+    ; -Pn
+    cmp byte [rdi], '-'
+    jne .check_engine
+    cmp byte [rdi+1], 'P'
+    jne .check_sn
+    cmp byte [rdi+2], 'n'
+    jne .check_sn
+    cmp byte [rdi+3], 0
+    jne .check_sn
+    mov byte [skip_discovery], 1
+    jmp .arg_next
+
+.check_sn:
+    ; -sn
+    cmp byte [rdi], '-'
+    jne .check_pe
+    cmp byte [rdi+1], 's'
+    jne .check_pe
+    cmp byte [rdi+2], 'n'
+    jne .check_pe
+    cmp byte [rdi+3], 0
+    jne .check_pe
+    mov byte [ping_only_mode], 1
+    jmp .arg_next
+
+.check_pe:
+    ; -PE
+    cmp byte [rdi], '-'
+    jne .check_pp
+    cmp byte [rdi+1], 'P'
+    jne .check_pp
+    cmp byte [rdi+2], 'E'
+    jne .check_pp
+    cmp byte [rdi+3], 0
+    jne .check_pp
+    mov byte [disc_icmp_type], 8
+    jmp .arg_next
+.check_pp:
+    ; -PP
+    cmp byte [rdi], '-'
+    jne .check_pm
+    cmp byte [rdi+1], 'P'
+    jne .check_pm
+    cmp byte [rdi+2], 'P'
+    jne .check_pm
+    cmp byte [rdi+3], 0
+    jne .check_pm
+    mov byte [disc_icmp_type], 13
+    jmp .arg_next
+.check_pm:
+    ; -PM
+    cmp byte [rdi], '-'
+    jne .check_n
+    cmp byte [rdi+1], 'P'
+    jne .check_n
+    cmp byte [rdi+2], 'M'
+    jne .check_n
+    cmp byte [rdi+3], 0
+    jne .check_n
+    mov byte [disc_icmp_type], 17
+    jmp .arg_next
+.check_n:
+    ; -n
+    cmp byte [rdi], '-'
+    jne .check_R
+    cmp byte [rdi+1], 'n'
+    jne .check_R
+    cmp byte [rdi+2], 0
+    jne .check_R
+    mov byte [no_dns], 1
+    jmp .arg_next
+.check_R:
+    ; -R
+    cmp byte [rdi], '-'
+    jne .check_F
+    cmp byte [rdi+1], 'R'
+    jne .check_F
+    cmp byte [rdi+2], 0
+    jne .check_F
+    mov byte [force_dns], 1
+    jmp .arg_next
+.check_F:
+    ; -F
+    cmp byte [rdi], '-'
+    jne .check_r
+    cmp byte [rdi+1], 'F'
+    jne .check_r
+    cmp byte [rdi+2], 0
+    jne .check_r
+    mov byte [fast_mode], 1
+    jmp .arg_next
+.check_r:
+    ; -r
+    cmp byte [rdi], '-'
+    jne .check_sC
+    cmp byte [rdi+1], 'r'
+    jne .check_sC
+    cmp byte [rdi+2], 0
+    jne .check_sC
+    mov byte [sequential_mode], 1
+    jmp .arg_next
+.check_sC:
+    ; -sC
+    cmp byte [rdi], '-'
+    jne .check_f
+    cmp byte [rdi+1], 's'
+    jne .check_f
+    cmp byte [rdi+2], 'C'
+    jne .check_f
+    cmp byte [rdi+3], 0
+    jne .check_f
+    mov byte [script_default_mode], 1
+    mov byte [scan_mode], SCAN_SCRIPT
+    jmp .arg_next
+.check_f:
+    ; -f
+    cmp byte [rdi], '-'
+    jne .check_6
+    cmp byte [rdi+1], 'f'
+    jne .check_6
+    cmp byte [rdi+2], 0
+    jne .check_6
+    mov byte [frag_mode], 1
+    jmp .arg_next
+.check_6:
+    ; -6
+    cmp byte [rdi], '-'
+    jne .check_V
+    cmp byte [rdi+1], '6'
+    jne .check_V
+    cmp byte [rdi+2], 0
+    jne .check_V
+    mov byte [ipv6_mode], 1
+    jmp .arg_next
+.check_V:
+    ; -V
+    cmp byte [rdi], '-'
+    jne .check_h
+    cmp byte [rdi+1], 'V'
+    jne .check_h
+    cmp byte [rdi+2], 0
+    jne .check_h
+    mov byte [version_mode], 1
+    jmp .arg_next
+.check_h:
+    ; -h
+    cmp byte [rdi], '-'
+    jne .check_badsum
+    cmp byte [rdi+1], 'h'
+    jne .check_badsum
+    cmp byte [rdi+2], 0
+    jne .check_badsum
+    mov byte [help_mode], 1
+    jmp .arg_next
+.check_badsum:
+    ; --badsum
+    cmp  byte [rdi+1], '-'
+    jne  .check_send_eth
+    cmp  dword [rdi+2], 'bads'
+    jne  .check_send_eth
+    cmp  word  [rdi+6], 'um'
+    jne  .check_send_eth
+    cmp  byte  [rdi+8], 0
+    jne  .check_send_eth
+    mov  byte [badsum_mode], 1
+    jmp  .arg_next
+.check_send_eth:
+    ; --send-eth
+    cmp  byte [rdi+1], '-'
+    jne  .check_send_ip
+    cmp  dword [rdi+2], 'send'
+    jne  .check_send_ip
+    cmp  dword [rdi+6], '-eth'
+    jne  .check_send_ip
+    cmp  byte  [rdi+10], 0
+    jne  .check_send_ip
+    mov  byte [send_eth_mode], 1
+    jmp  .arg_next
+.check_send_ip:
+    ; --send-ip (no-op)
+    cmp  byte [rdi+1], '-'
+    jne  .check_priv
+    cmp  dword [rdi+2], 'send'
+    jne  .check_priv
+    cmp  dword [rdi+6], '-ip'
+    jne  .check_priv
+    cmp  byte  [rdi+9], 0
+    jne  .check_priv
+    jmp  .arg_next
+.check_priv:
+    ; --privileged
+    cmp  byte [rdi+1], '-'
+    jne  .check_unpriv
+    cmp  dword [rdi+2], 'priv'
+    jne  .check_unpriv
+    cmp  dword [rdi+6], 'ileg'
+    jne  .check_unpriv
+    cmp  byte  [rdi+10], 'ed'
+    jne  .check_unpriv
+    cmp  byte  [rdi+12], 0
+    jne  .check_unpriv
+    mov  byte [assume_privileged], 1
+    jmp  .arg_next
+.check_unpriv:
+    ; --unprivileged
+    cmp  byte [rdi+1], '-'
+    jne  .check_nonint
+    cmp  dword [rdi+2], 'unpr'
+    jne  .check_nonint
+    cmp  dword [rdi+6], 'ivil'
+    jne  .check_nonint
+    cmp  byte  [rdi+10], 'ege'
+    jne  .check_nonint
+    cmp  byte  [rdi+13], 'd'
+    jne  .check_nonint
+    cmp  byte  [rdi+14], 0
+    jne  .check_nonint
+    mov  byte [assume_unprivileged], 1
+    jmp  .arg_next
+.check_nonint:
+    ; --noninteractive
+    cmp  byte [rdi+1], '-'
+    jne  .check_append
+    cmp  dword [rdi+2], 'noni'
+    jne  .check_append
+    cmp  dword [rdi+6], 'nter'
+    jne  .check_append
+    cmp  dword [rdi+10], 'acti'
+    jne  .check_append
+    cmp  byte  [rdi+14], 've'
+    jne  .check_append
+    cmp  byte  [rdi+16], 0
+    jne  .check_append
+    mov  byte [noninteractive], 1
+    jmp  .arg_next
+.check_append:
+    ; --append-output
+    cmp  byte [rdi+1], '-'
+    jne  .check_reason
+    cmp  dword [rdi+2], 'appe'
+    jne  .check_reason
+    cmp  dword [rdi+6], 'nd-o'
+    jne  .check_reason
+    cmp  dword [rdi+10], 'utpu'
+    jne  .check_reason
+    cmp  byte  [rdi+14], 't'
+    jne  .check_reason
+    cmp  byte  [rdi+15], 0
+    jne  .check_reason
+    mov  byte [append_output], 1
+    jmp  .arg_next
+.check_reason:
+    ; --reason
+    cmp  byte [rdi+1], '-'
+    jne  .check_pktrace
+    cmp  dword [rdi+2], 'reas'
+    jne  .check_pktrace
+    cmp  word  [rdi+6], 'on'
+    jne  .check_pktrace
+    cmp  byte  [rdi+8], 0
+    jne  .check_pktrace
+    mov  byte [reason_mode], 1
+    jmp  .arg_next
+.check_pktrace:
+    ; --packet-trace
+    cmp  byte [rdi+1], '-'
+    jne  .check_iflist
+    cmp  dword [rdi+2], 'pack'
+    jne  .check_iflist
+    cmp  dword [rdi+6], 'et-t'
+    jne  .check_iflist
+    cmp  dword [rdi+10], 'race'
+    jne  .check_iflist
+    cmp  byte  [rdi+14], 0
+    jne  .check_iflist
+    mov  byte [packet_trace], 1
+    jmp  .arg_next
+.check_iflist:
+    ; --iflist
+    cmp  byte [rdi+1], '-'
+    jne  .check_verlight
+    cmp  dword [rdi+2], 'ifli'
+    jne  .check_verlight
+    cmp  word  [rdi+6], 'st'
+    jne  .check_verlight
+    cmp  byte  [rdi+8], 0
+    jne  .check_verlight
+    mov  byte [iflist_mode], 1
+    jmp  .arg_next
+.check_verlight:
+    ; --version-light
+    cmp  byte [rdi+1], '-'
+    jne  .check_verall
+    cmp  dword [rdi+2], 'vers'
+    jne  .check_verall
+    cmp  dword [rdi+6], 'ion-'
+    jne  .check_verall
+    cmp  dword [rdi+10], 'ligh'
+    jne  .check_verall
+    cmp  byte  [rdi+14], 't'
+    jne  .check_verall
+    cmp  byte  [rdi+15], 0
+    jne  .check_verall
+    mov  byte [version_intensity], 2
+    jmp  .arg_next
+.check_verall:
+    ; --version-all
+    cmp  byte [rdi+1], '-'
+    jne  .check_vertrace
+    cmp  dword [rdi+2], 'vers'
+    jne  .check_vertrace
+    cmp  dword [rdi+6], 'ion-'
+    jne  .check_vertrace
+    cmp  dword [rdi+10], 'all'
+    jne  .check_vertrace
+    cmp  byte  [rdi+13], 0
+    jne  .check_vertrace
+    mov  byte [version_intensity], 9
+    jmp  .arg_next
+.check_vertrace:
+    ; --version-trace
+    cmp  byte [rdi+1], '-'
+    jne  .check_no_style
+    cmp  dword [rdi+2], 'vers'
+    jne  .check_no_style
+    cmp  dword [rdi+6], 'ion-'
+    jne  .check_no_style
+    cmp  dword [rdi+10], 'trac'
+    jne  .check_no_style
+    cmp  byte  [rdi+14], 'e'
+    jne  .check_no_style
+    cmp  byte  [rdi+15], 0
+    jne  .check_no_style
+    mov  byte [version_trace], 1
+    jmp  .arg_next
+.check_no_style:
+    ; --no-stylesheet
+    cmp  byte [rdi+1], '-'
+    jne  .check_webxml
+    cmp  dword [rdi+2], 'no-s'
+    jne  .check_webxml
+    cmp  dword [rdi+6], 'tyle'
+    jne  .check_webxml
+    cmp  dword [rdi+10], 'shee'
+    jne  .check_webxml
+    cmp  byte  [rdi+14], 't'
+    jne  .check_webxml
+    cmp  byte  [rdi+15], 0
+    jne  .check_webxml
+    mov  byte [no_stylesheet], 1
+    jmp  .arg_next
+.check_webxml:
+    ; --webxml
+    cmp  byte [rdi+1], '-'
+    jne  .check_system_dns
+    cmp  dword [rdi+2], 'webx'
+    jne  .check_system_dns
+    cmp  word  [rdi+6], 'ml'
+    jne  .check_system_dns
+    cmp  byte  [rdi+8], 0
+    jne  .check_system_dns
+    lea  rax, [webxml_url_str]
+    mov  [stylesheet_path], rax
+    jmp  .arg_next
+.check_system_dns:
+    ; --system-dns
+    cmp  byte [rdi+1], '-'
+    jne  .check_trace
+    cmp  dword [rdi+2], 'syst'
+    jne  .check_trace
+    cmp  dword [rdi+6], 'em-d'
+    jne  .check_trace
+    cmp  word  [rdi+10], 'ns'
+    jne  .check_trace
+    cmp  byte  [rdi+12], 0
+    jne  .check_trace
+    mov  byte [system_dns], 1
+    jmp  .arg_next
+.check_trace:
+    ; --traceroute
+    cmp  byte [rdi+1], '-'
+    jne  .check_engine
+    cmp  dword [rdi+2], 'trac'
+    jne  .check_engine
+    cmp  dword [rdi+6], 'erou'
+    jne  .check_engine
+    cmp  word  [rdi+10], 'te'
+    jne  .check_engine
+    cmp  byte  [rdi+12], 0
+    jne  .check_engine
+    mov  byte [traceroute_mode], 1
     jmp  .arg_next
 
 .check_engine:
@@ -2058,10 +2567,67 @@ _start:
     je .skip_echo
     call print_echo_config
 .skip_echo:
+    ; Apply timing template (only if timing_template != 0)
+    cmp  byte [timing_template], 0
+    je   .timing_done
+    movzx eax, byte [timing_template]
+    cmp  eax, 1
+    jne  .t2
+    mov  dword [rate_value], 10
+    mov  dword [scan_delay], 15000000
+    mov  byte  [retry_max], 3
+    jmp  .timing_done
+.t2:
+    cmp  eax, 2
+    jne  .t3
+    mov  dword [rate_value], 100
+    mov  dword [scan_delay], 400000
+    mov  byte  [retry_max], 2
+    jmp  .timing_done
+.t3:
+    cmp  eax, 3
+    jne  .t4
+    mov  dword [rate_value], 1000
+    mov  dword [scan_delay], 15000
+    mov  byte  [retry_max], 2
+    jmp  .timing_done
+.t4:
+    cmp  eax, 4
+    jne  .t5
+    mov  dword [rate_value], 5000
+    mov  dword [scan_delay], 1000
+    mov  byte  [retry_max], 1
+    jmp  .timing_done
+.t5:
+    mov  dword [rate_value], 0
+    mov  dword [scan_delay], 0
+    mov  byte  [retry_max], 0
+    jmp  .timing_done
+.t0:
+    mov  dword [rate_value], 1
+    mov  dword [scan_delay], 300000000
+    mov  byte  [retry_max], 5
+.timing_done:
+
     ; Convert src_port to big-endian
     mov ax, [src_port]
     xchg al, ah
     mov [src_port_be], ax
+
+    ; Handle -sn: run pingsweep, exit
+    cmp  byte [ping_only_mode], 1
+    jne  .skip_ping_only
+    mov  byte [scan_mode], SCAN_PINGSWEEP
+    call pingsweep_run
+    jmp  .exit
+.skip_ping_only:
+
+    ; Handle -Pn: skip discovery
+    cmp  byte [skip_discovery], 1
+    jne  .do_discovery
+    jmp  .scan_dispatch
+.do_discovery:
+    ; existing discovery path continues
 
     ; Set scan mode default
     cmp byte [scan_mode], 0
@@ -2215,6 +2781,7 @@ _start:
 .skip_csv_header:
 
     ; dispatch to selected engine if not sequential
+.scan_dispatch:
     cmp  byte [scan_mode], SCAN_SAR
     jne  .not_sar_direct
     call sar_init

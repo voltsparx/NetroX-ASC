@@ -375,6 +375,42 @@ parse_u32:
     jz    .invalid
     pop   rbx
     ret
+
+; ------------------------------------------------------------
+; parse_timespec
+; Input:  rdi -> time string (e.g. "500ms", "2s", "1m")
+; Output: rax = microseconds (u64)
+; ------------------------------------------------------------
+parse_timespec:
+    push rbx
+    call parse_u32
+    mov  bl, [rdi]
+    test bl, bl
+    jz   .pts_assume_ms
+    cmp  bl, 'm'
+    jne  .pts_s
+    cmp  byte [rdi+1], 's'
+    jne  .pts_m
+    imul rax, 1000
+    jmp  .pts_done
+.pts_s:
+    cmp  bl, 's'
+    jne  .pts_h
+    imul rax, 1000000
+    jmp  .pts_done
+.pts_m:
+    imul rax, 60000000
+    jmp  .pts_done
+.pts_h:
+    cmp  bl, 'h'
+    jne  .pts_assume_ms
+    imul rax, 3600000000
+    jmp  .pts_done
+.pts_assume_ms:
+    imul rax, 1000
+.pts_done:
+    pop  rbx
+    ret
 .invalid:
     xor  eax, eax
     pop  rbx

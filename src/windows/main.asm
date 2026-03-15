@@ -164,6 +164,7 @@ ex_arp   db "ARP scan: local subnet ARP discovery (layer 2).", 13, 10, 0
 
 ex_fmt1  db "Example:", 13, 10, "  netrox-asm.exe 10.0.0.1 --scan ", 0
 ex_fmt2  db 13, 10, 0
+webxml_url_str db "https://nmap.org/svn/docs/nmap.xsl", 0
 
 scan_name_syn db "syn", 0
 scan_name_ack db "ack", 0
@@ -967,6 +968,109 @@ quiet_mode        resb 1
 help_mode         resb 1
 explain_mode      resb 1
 
+; --- Target specification ---
+iL_mode             resb 1
+iL_file_path        resq 1
+exclude_list        resd 256
+exclude_count       resw 1
+excludefile_path    resq 1
+
+; --- Host discovery ---
+skip_discovery      resb 1
+ping_only_mode      resb 1
+disc_icmp_type      resb 1
+disc_tcp_mode       resb 1
+disc_tcp_port       resw 1
+disc_udp_port       resw 1
+disc_proto_list     resb 8
+disc_proto_count    resb 1
+no_dns              resb 1
+force_dns           resb 1
+dns_server_list     resd 4
+dns_server_count    resb 1
+system_dns          resb 1
+traceroute_mode     resb 1
+
+; --- Port specification ---
+excl_port_list      resw 256
+excl_port_count     resw 1
+fast_mode           resb 1
+sequential_mode     resb 1
+port_ratio_mode     resb 1
+port_ratio_val      resd 1
+
+; --- Version detection ---
+version_intensity   resb 1
+version_trace       resb 1
+
+; --- Script engine ---
+script_default_mode resb 1
+script_name_ptr     resq 1
+script_args_ptr     resq 1
+script_args_file    resq 1
+script_trace        resb 1
+script_help_mode    resb 1
+script_help_name    resq 1
+
+; --- Timing ---
+timing_template     resb 1
+min_rate            resd 1
+max_scan_delay_us   resd 1
+min_parallel        resw 1
+max_parallel        resw 1
+min_rtt_timeout     resd 1
+max_rtt_timeout     resd 1
+initial_rtt_timeout resd 1
+host_timeout_us     resq 1
+
+; --- Packet crafting / evasion ---
+frag_mode           resb 1
+frag_mtu            resw 1
+decoy_list          resd 8
+decoy_count         resb 1
+decoy_me_pos        resb 1
+spoof_src_ip        resd 1
+custom_ttl          resb 1
+badsum_mode         resb 1
+custom_data         resb 64
+custom_data_len     resb 1
+random_data_len     resb 1
+ip_options_data     resb 40
+ip_options_len      resb 1
+proxy_list          resq 4
+proxy_count         resb 1
+proxy_mode          resb 1
+spoof_mac_addr      resb 6
+spoof_mac_mode      resb 1
+send_eth_mode       resb 1
+
+; --- Output files ---
+oN_path             resq 1
+oN_fd               resd 1
+oX_path             resq 1
+oX_fd               resd 1
+oG_path             resq 1
+oG_fd               resd 1
+oS_path             resq 1
+oS_fd               resd 1
+oA_base             resq 1
+verbosity           resb 1
+debug_level         resb 1
+reason_mode         resb 1
+packet_trace        resb 1
+iflist_mode         resb 1
+append_output       resb 1
+noninteractive      resb 1
+stylesheet_path     resq 1
+no_stylesheet       resb 1
+
+; --- Misc ---
+ipv6_mode           resb 1
+version_mode        resb 1
+datadir_path        resq 1
+assume_privileged   resb 1
+assume_unprivileged resb 1
+
 ; ===========================================================================
 ; NetroX-ASM  |  Windows x86_64  |  Part 2 of 4: _start, args, init, scan loop
 ; ===========================================================================
@@ -974,6 +1078,16 @@ explain_mode      resb 1
 SECTION .text
 
 _start:
+    mov  byte [version_intensity], 7
+    mov  word [disc_tcp_port], 80
+    mov  word [disc_udp_port], 40125
+    mov  byte [disc_icmp_type], 8
+    mov  word [min_parallel], 1
+    mov  word [max_parallel], 64
+    mov  dword [min_rtt_timeout], 100000
+    mov  dword [max_rtt_timeout], 10000000
+    mov  dword [initial_rtt_timeout], 1000000
+    mov  byte [decoy_me_pos], 0xFF
     mov qword [sock_fd], INVALID_SOCKET
     sub rsp, 40
     mov ecx, STD_OUTPUT_HANDLE
@@ -1089,6 +1203,7 @@ _start:
     ja .check_p
     sub al, '0'
     mov [timing_level], al
+    mov [timing_template], al
     cmp al, 0
     jne .t1
     mov dword [rate_value], 0
@@ -1370,6 +1485,103 @@ _start:
     jmp .arg_next
 
 .check_discovery:
+    ; parity flags (batch 1)
+    cmp byte [rsi], '-'
+    jne .check_discovery_continue
+    cmp byte [rsi+1], 'P'
+    jne .chk_sn
+    cmp byte [rsi+2], 'n'
+    jne .chk_sn
+    cmp byte [rsi+3], 0
+    jne .chk_sn
+    mov byte [skip_discovery], 1
+    jmp .arg_next
+.chk_sn:
+    cmp byte [rsi+1], 's'
+    jne .chk_pe
+    cmp byte [rsi+2], 'n'
+    jne .chk_pe
+    cmp byte [rsi+3], 0
+    jne .chk_pe
+    mov byte [ping_only_mode], 1
+    jmp .arg_next
+.chk_pe:
+    cmp byte [rsi+1], 'P'
+    jne .chk_n
+    cmp byte [rsi+2], 'E'
+    jne .chk_n
+    cmp byte [rsi+3], 0
+    jne .chk_n
+    mov byte [disc_icmp_type], 8
+    jmp .arg_next
+.chk_n:
+    cmp byte [rsi+1], 'n'
+    jne .chk_R
+    cmp byte [rsi+2], 0
+    jne .chk_R
+    mov byte [no_dns], 1
+    jmp .arg_next
+.chk_R:
+    cmp byte [rsi+1], 'R'
+    jne .chk_F
+    cmp byte [rsi+2], 0
+    jne .chk_F
+    mov byte [force_dns], 1
+    jmp .arg_next
+.chk_F:
+    cmp byte [rsi+1], 'F'
+    jne .chk_r
+    cmp byte [rsi+2], 0
+    jne .chk_r
+    mov byte [fast_mode], 1
+    jmp .arg_next
+.chk_r:
+    cmp byte [rsi+1], 'r'
+    jne .chk_sC
+    cmp byte [rsi+2], 0
+    jne .chk_sC
+    mov byte [sequential_mode], 1
+    jmp .arg_next
+.chk_sC:
+    cmp byte [rsi+1], 's'
+    jne .chk_f
+    cmp byte [rsi+2], 'C'
+    jne .chk_f
+    cmp byte [rsi+3], 0
+    jne .chk_f
+    mov byte [script_default_mode], 1
+    mov byte [scan_mode], SCAN_SCRIPT
+    jmp .arg_next
+.chk_f:
+    cmp byte [rsi+1], 'f'
+    jne .chk_6
+    cmp byte [rsi+2], 0
+    jne .chk_6
+    mov byte [frag_mode], 1
+    jmp .arg_next
+.chk_6:
+    cmp byte [rsi+1], '6'
+    jne .chk_V
+    cmp byte [rsi+2], 0
+    jne .chk_V
+    mov byte [ipv6_mode], 1
+    jmp .arg_next
+.chk_V:
+    cmp byte [rsi+1], 'V'
+    jne .chk_h
+    cmp byte [rsi+2], 0
+    jne .chk_h
+    mov byte [version_mode], 1
+    jmp .arg_next
+.chk_h:
+    cmp byte [rsi+1], 'h'
+    jne .check_discovery_continue
+    cmp byte [rsi+2], 0
+    jne .check_discovery_continue
+    mov byte [help_mode], 1
+    jmp .arg_next
+
+.check_discovery_continue:
     ; --discovery MODE
     cmp byte [rsi+1], '-'
     jne .check_top_ports
@@ -1781,9 +1993,59 @@ _start:
     je .skip_echo
     call print_echo_config
 .skip_echo:
+    ; Apply timing template (only if timing_template != 0)
+    cmp  byte [timing_template], 0
+    je   .timing_done
+    movzx eax, byte [timing_template]
+    cmp  eax, 1
+    jne  .t2
+    mov  dword [rate_value], 10
+    mov  dword [scan_delay], 15000000
+    mov  byte  [retry_max], 3
+    jmp  .timing_done
+.t2:
+    cmp  eax, 2
+    jne  .t3
+    mov  dword [rate_value], 100
+    mov  dword [scan_delay], 400000
+    mov  byte  [retry_max], 2
+    jmp  .timing_done
+.t3:
+    cmp  eax, 3
+    jne  .t4
+    mov  dword [rate_value], 1000
+    mov  dword [scan_delay], 15000
+    mov  byte  [retry_max], 2
+    jmp  .timing_done
+.t4:
+    cmp  eax, 4
+    jne  .t5
+    mov  dword [rate_value], 5000
+    mov  dword [scan_delay], 1000
+    mov  byte  [retry_max], 1
+    jmp  .timing_done
+.t5:
+    mov  dword [rate_value], 0
+    mov  dword [scan_delay], 0
+    mov  byte  [retry_max], 0
+    jmp  .timing_done
+.t0:
+    mov  dword [rate_value], 1
+    mov  dword [scan_delay], 300000000
+    mov  byte  [retry_max], 5
+.timing_done:
+
     mov ax, [src_port]
     xchg al, ah
     mov [src_port_be], ax
+
+    ; Handle -sn: run pingsweep, exit
+    cmp  byte [ping_only_mode], 1
+    jne  .skip_ping_only
+    mov  byte [scan_mode], SCAN_PINGSWEEP
+    call pingsweep_run
+    jmp  .exit
+.skip_ping_only:
 
     cmp byte [scan_mode], 0
     jne .scan_mode_set
