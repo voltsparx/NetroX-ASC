@@ -1110,6 +1110,8 @@ min_rate            resd 1
 max_scan_delay_us   resd 1
 min_parallel        resw 1
 max_parallel        resw 1
+min_hostgroup       resd 1
+max_hostgroup       resd 1
 min_rtt_timeout     resd 1
 max_rtt_timeout     resd 1
 initial_rtt_timeout resd 1
@@ -2443,7 +2445,7 @@ _start:
 .check_trace:
     ; --traceroute
     cmp  byte [rdi+1], '-'
-    jne  .check_engine
+    jne  .check_mtu
     cmp  dword [rdi+2], 'trac'
     jne  .check_engine
     cmp  dword [rdi+6], 'erou'
@@ -2453,6 +2455,955 @@ _start:
     cmp  byte  [rdi+12], 0
     jne  .check_engine
     mov  byte [traceroute_mode], 1
+    jmp  .arg_next
+
+.check_mtu:
+    ; --mtu <n>
+    cmp  byte [rdi+1], '-'
+    jne  .check_ttl
+    cmp  dword [rdi+2], 'mtu'
+    jne  .check_ttl
+    cmp  byte  [rdi+5], 0
+    jne  .check_ttl
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_u32
+    test eax, eax
+    jz   .usage
+    mov  [frag_mtu], ax
+    mov  byte [frag_mode], 1
+    jmp  .arg_next
+
+.check_ttl:
+    ; --ttl <n>
+    cmp  byte [rdi+1], '-'
+    jne  .check_min_rate
+    cmp  dword [rdi+2], 'ttl'
+    jne  .check_min_rate
+    cmp  byte  [rdi+5], 0
+    jne  .check_min_rate
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_u32
+    test eax, eax
+    jz   .usage
+    mov  [custom_ttl], al
+    jmp  .arg_next
+
+.check_min_rate:
+    ; --min-rate <n>
+    cmp  byte [rdi+1], '-'
+    jne  .check_max_rate
+    cmp  dword [rdi+2], 'min-'
+    jne  .check_max_rate
+    cmp  dword [rdi+6], 'rate'
+    jne  .check_max_rate
+    cmp  byte  [rdi+10], 0
+    jne  .check_max_rate
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_u32
+    test eax, eax
+    jz   .usage
+    mov  [min_rate], eax
+    jmp  .arg_next
+
+.check_max_rate:
+    ; --max-rate <n>
+    cmp  byte [rdi+1], '-'
+    jne  .check_max_retries
+    cmp  dword [rdi+2], 'max-'
+    jne  .check_max_retries
+    cmp  dword [rdi+6], 'rate'
+    jne  .check_max_retries
+    cmp  byte  [rdi+10], 0
+    jne  .check_max_retries
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_u32
+    test eax, eax
+    jz   .usage
+    mov  [rate_value], eax
+    jmp  .arg_next
+
+.check_max_retries:
+    ; --max-retries <n>
+    cmp  byte [rdi+1], '-'
+    jne  .check_ver_int
+    cmp  dword [rdi+2], 'max-'
+    jne  .check_ver_int
+    cmp  dword [rdi+6], 'retr'
+    jne  .check_ver_int
+    cmp  byte  [rdi+10], 'i'
+    jne  .check_ver_int
+    cmp  byte  [rdi+11], 'e'
+    jne  .check_ver_int
+    cmp  byte  [rdi+12], 's'
+    jne  .check_ver_int
+    cmp  byte  [rdi+13], 0
+    jne  .check_ver_int
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_u32
+    test eax, eax
+    jz   .usage
+    mov  [retry_max], al
+    jmp  .arg_next
+
+.check_ver_int:
+    ; --version-intensity <n>
+    cmp  byte [rdi+1], '-'
+    jne  .check_min_par
+    cmp  dword [rdi+2], 'vers'
+    jne  .check_min_par
+    cmp  dword [rdi+6], 'ion-'
+    jne  .check_min_par
+    cmp  dword [rdi+10], 'inte'
+    jne  .check_min_par
+    cmp  dword [rdi+14], 'nsit'
+    jne  .check_min_par
+    cmp  byte  [rdi+18], 'y'
+    jne  .check_min_par
+    cmp  byte  [rdi+19], 0
+    jne  .check_min_par
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_u32
+    test eax, eax
+    jz   .usage
+    mov  [version_intensity], al
+    jmp  .arg_next
+
+.check_min_par:
+    ; --min-parallelism <n>
+    cmp  byte [rdi+1], '-'
+    jne  .check_max_par
+    cmp  dword [rdi+2], 'min-'
+    jne  .check_max_par
+    cmp  dword [rdi+6], 'para'
+    jne  .check_max_par
+    cmp  dword [rdi+10], 'llel'
+    jne  .check_max_par
+    cmp  dword [rdi+14], 'ism'
+    jne  .check_max_par
+    cmp  byte  [rdi+17], 0
+    jne  .check_max_par
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_u32
+    test eax, eax
+    jz   .usage
+    mov  [min_parallel], ax
+    jmp  .arg_next
+
+.check_max_par:
+    ; --max-parallelism <n>
+    cmp  byte [rdi+1], '-'
+    jne  .check_min_hostgroup
+    cmp  dword [rdi+2], 'max-'
+    jne  .check_min_hostgroup
+    cmp  dword [rdi+6], 'para'
+    jne  .check_min_hostgroup
+    cmp  dword [rdi+10], 'llel'
+    jne  .check_min_hostgroup
+    cmp  dword [rdi+14], 'ism'
+    jne  .check_min_hostgroup
+    cmp  byte  [rdi+17], 0
+    jne  .check_min_hostgroup
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_u32
+    test eax, eax
+    jz   .usage
+    mov  [max_parallel], ax
+    jmp  .arg_next
+
+.check_min_hostgroup:
+    ; --min-hostgroup <n>
+    cmp  byte [rdi+1], '-'
+    jne  .check_max_hostgroup
+    cmp  dword [rdi+2], 'min-'
+    jne  .check_max_hostgroup
+    cmp  dword [rdi+6], 'host'
+    jne  .check_max_hostgroup
+    cmp  dword [rdi+10], 'grou'
+    jne  .check_max_hostgroup
+    cmp  byte  [rdi+14], 'p'
+    jne  .check_max_hostgroup
+    cmp  byte  [rdi+15], 0
+    jne  .check_max_hostgroup
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_u32
+    test eax, eax
+    jz   .usage
+    mov  [min_hostgroup], eax
+    jmp  .arg_next
+
+.check_max_hostgroup:
+    ; --max-hostgroup <n>
+    cmp  byte [rdi+1], '-'
+    jne  .check_data_length
+    cmp  dword [rdi+2], 'max-'
+    jne  .check_data_length
+    cmp  dword [rdi+6], 'host'
+    jne  .check_data_length
+    cmp  dword [rdi+10], 'grou'
+    jne  .check_data_length
+    cmp  byte  [rdi+14], 'p'
+    jne  .check_data_length
+    cmp  byte  [rdi+15], 0
+    jne  .check_data_length
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_u32
+    test eax, eax
+    jz   .usage
+    mov  [max_hostgroup], eax
+    jmp  .arg_next
+
+.check_data_length:
+    ; --data-length <n>
+    cmp  byte [rdi+1], '-'
+    jne  .check_src_port_g
+    cmp  dword [rdi+2], 'data'
+    jne  .check_src_port_g
+    cmp  dword [rdi+6], '-len'
+    jne  .check_src_port_g
+    cmp  dword [rdi+10], 'gth'
+    jne  .check_src_port_g
+    cmp  byte  [rdi+13], 0
+    jne  .check_src_port_g
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_u32
+    test eax, eax
+    jz   .usage
+    mov  [random_data_len], al
+    jmp  .arg_next
+
+.check_src_port_g:
+    ; -g <n>
+    cmp  byte [rdi], '-'
+    jne  .check_src_port_long
+    cmp  byte [rdi+1], 'g'
+    jne  .check_src_port_long
+    cmp  byte [rdi+2], 0
+    jne  .check_src_port_long
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_u32
+    test eax, eax
+    jz   .usage
+    mov  [src_port], ax
+    jmp  .arg_next
+
+.check_src_port_long:
+    ; --source-port <n>
+    cmp  byte [rdi+1], '-'
+    jne  .check_host_timeout
+    cmp  dword [rdi+2], 'sour'
+    jne  .check_host_timeout
+    cmp  dword [rdi+6], 'ce-p'
+    jne  .check_host_timeout
+    cmp  dword [rdi+10], 'ort'
+    jne  .check_host_timeout
+    cmp  byte  [rdi+13], 0
+    jne  .check_host_timeout
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_u32
+    test eax, eax
+    jz   .usage
+    mov  [src_port], ax
+    jmp  .arg_next
+
+.check_host_timeout:
+    ; --host-timeout <t>
+    cmp  byte [rdi+1], '-'
+    jne  .check_scan_delay
+    cmp  dword [rdi+2], 'host'
+    jne  .check_scan_delay
+    cmp  dword [rdi+6], '-tim'
+    jne  .check_scan_delay
+    cmp  dword [rdi+10], 'eout'
+    jne  .check_scan_delay
+    cmp  byte  [rdi+14], 0
+    jne  .check_scan_delay
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_timespec
+    test eax, eax
+    jz   .usage
+    mov  [host_timeout_us], rax
+    jmp  .arg_next
+
+.check_scan_delay:
+    ; --scan-delay <t>
+    cmp  byte [rdi+1], '-'
+    jne  .check_max_scan_delay
+    cmp  dword [rdi+2], 'scan'
+    jne  .check_max_scan_delay
+    cmp  dword [rdi+6], '-del'
+    jne  .check_max_scan_delay
+    cmp  dword [rdi+10], 'ay'
+    jne  .check_max_scan_delay
+    cmp  byte  [rdi+12], 0
+    jne  .check_max_scan_delay
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_timespec
+    test eax, eax
+    jz   .usage
+    mov  [scan_delay], eax
+    jmp  .arg_next
+
+.check_max_scan_delay:
+    ; --max-scan-delay <t>
+    cmp  byte [rdi+1], '-'
+    jne  .check_min_rtt
+    cmp  dword [rdi+2], 'max-'
+    jne  .check_min_rtt
+    cmp  dword [rdi+6], 'scan'
+    jne  .check_min_rtt
+    cmp  dword [rdi+10], '-del'
+    jne  .check_min_rtt
+    cmp  dword [rdi+14], 'ay'
+    jne  .check_min_rtt
+    cmp  byte  [rdi+16], 0
+    jne  .check_min_rtt
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_timespec
+    test eax, eax
+    jz   .usage
+    mov  [max_scan_delay_us], eax
+    jmp  .arg_next
+
+.check_min_rtt:
+    ; --min-rtt-timeout <t>
+    cmp  byte [rdi+1], '-'
+    jne  .check_max_rtt
+    cmp  dword [rdi+2], 'min-'
+    jne  .check_max_rtt
+    cmp  dword [rdi+6], 'rtt-'
+    jne  .check_max_rtt
+    cmp  dword [rdi+10], 'time'
+    jne  .check_max_rtt
+    cmp  dword [rdi+14], 'out'
+    jne  .check_max_rtt
+    cmp  byte  [rdi+17], 0
+    jne  .check_max_rtt
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_timespec
+    test eax, eax
+    jz   .usage
+    mov  [min_rtt_timeout], eax
+    jmp  .arg_next
+
+.check_max_rtt:
+    ; --max-rtt-timeout <t>
+    cmp  byte [rdi+1], '-'
+    jne  .check_init_rtt
+    cmp  dword [rdi+2], 'max-'
+    jne  .check_init_rtt
+    cmp  dword [rdi+6], 'rtt-'
+    jne  .check_init_rtt
+    cmp  dword [rdi+10], 'time'
+    jne  .check_init_rtt
+    cmp  dword [rdi+14], 'out'
+    jne  .check_init_rtt
+    cmp  byte  [rdi+17], 0
+    jne  .check_init_rtt
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_timespec
+    test eax, eax
+    jz   .usage
+    mov  [max_rtt_timeout], eax
+    jmp  .arg_next
+
+.check_init_rtt:
+    ; --initial-rtt-timeout <t>
+    cmp  byte [rdi+1], '-'
+    jne  .check_iL
+    cmp  dword [rdi+2], 'init'
+    jne  .check_iL
+    cmp  dword [rdi+6], 'ial-'
+    jne  .check_iL
+    cmp  dword [rdi+10], 'rtt-'
+    jne  .check_iL
+    cmp  dword [rdi+14], 'time'
+    jne  .check_iL
+    cmp  dword [rdi+18], 'out'
+    jne  .check_iL
+    cmp  byte  [rdi+21], 0
+    jne  .check_iL
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_timespec
+    test eax, eax
+    jz   .usage
+    mov  [initial_rtt_timeout], eax
+    jmp  .arg_next
+
+.check_iL:
+    ; -iL <file>
+    cmp  byte [rdi], '-'
+    jne  .check_excludefile
+    cmp  byte [rdi+1], 'i'
+    jne  .check_excludefile
+    cmp  byte [rdi+2], 'L'
+    jne  .check_excludefile
+    cmp  byte [rdi+3], 0
+    jne  .check_excludefile
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rax, [rbx+rcx*8]
+    mov  [iL_file_path], rax
+    mov  byte [iL_mode], 1
+    jmp  .arg_next
+
+.check_excludefile:
+    ; --excludefile <file>
+    cmp  byte [rdi+1], '-'
+    jne  .check_spoof_ip
+    cmp  dword [rdi+2], 'excl'
+    jne  .check_spoof_ip
+    cmp  dword [rdi+6], 'udef'
+    jne  .check_spoof_ip
+    cmp  byte  [rdi+10], 'i'
+    jne  .check_spoof_ip
+    cmp  byte  [rdi+11], 'l'
+    jne  .check_spoof_ip
+    cmp  byte  [rdi+12], 'e'
+    jne  .check_spoof_ip
+    cmp  byte  [rdi+13], 0
+    jne  .check_spoof_ip
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rax, [rbx+rcx*8]
+    mov  [excludefile_path], rax
+    jmp  .arg_next
+
+.check_spoof_ip:
+    ; -S <ip>
+    cmp  byte [rdi], '-'
+    jne  .check_data_hex
+    cmp  byte [rdi+1], 'S'
+    jne  .check_data_hex
+    cmp  byte [rdi+2], 0
+    jne  .check_data_hex
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_ip
+    test eax, eax
+    jz   .usage
+    mov  [spoof_src_ip], eax
+    jmp  .arg_next
+
+.check_data_hex:
+    ; --data <hex>
+    cmp  byte [rdi+1], '-'
+    jne  .check_data_string
+    cmp  dword [rdi+2], 'data'
+    jne  .check_data_string
+    cmp  byte  [rdi+6], 0
+    jne  .check_data_string
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    lea  rsi, [custom_data]
+    mov  ecx, 64
+    call parse_hex_string
+    test eax, eax
+    jz   .usage
+    mov  [custom_data_len], al
+    jmp  .arg_next
+
+.check_data_string:
+    ; --data-string <s>
+    cmp  byte [rdi+1], '-'
+    jne  .check_datadir
+    cmp  dword [rdi+2], 'data'
+    jne  .check_datadir
+    cmp  dword [rdi+6], '-str'
+    jne  .check_datadir
+    cmp  dword [rdi+10], 'ing'
+    jne  .check_datadir
+    cmp  byte  [rdi+13], 0
+    jne  .check_datadir
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rsi, [rbx+rcx*8]
+    lea  rdi, [custom_data]
+    mov  ecx, 64
+.copy_data_str:
+    mov  al, [rsi]
+    mov  [rdi], al
+    test al, al
+    jz   .data_str_done
+    inc  rsi
+    inc  rdi
+    loop .copy_data_str
+.data_str_done:
+    mov  eax, 64
+    sub  eax, ecx
+    dec  eax
+    mov  [custom_data_len], al
+    jmp  .arg_next
+
+.check_datadir:
+    ; --datadir <dir>
+    cmp  byte [rdi+1], '-'
+    jne  .check_stylesheet
+    cmp  dword [rdi+2], 'data'
+    jne  .check_stylesheet
+    cmp  dword [rdi+6], 'dir'
+    jne  .check_stylesheet
+    cmp  byte  [rdi+9], 0
+    jne  .check_stylesheet
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rax, [rbx+rcx*8]
+    mov  [datadir_path], rax
+    jmp  .arg_next
+
+.check_stylesheet:
+    ; --stylesheet <path>
+    cmp  byte [rdi+1], '-'
+    jne  .check_script_args_file
+    cmp  dword [rdi+2], 'styl'
+    jne  .check_script_args_file
+    cmp  dword [rdi+6], 'eshe'
+    jne  .check_script_args_file
+    cmp  dword [rdi+10], 'et'
+    jne  .check_script_args_file
+    cmp  byte  [rdi+12], 0
+    jne  .check_script_args_file
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rax, [rbx+rcx*8]
+    mov  [stylesheet_path], rax
+    jmp  .arg_next
+
+.check_script_args_file:
+    ; --script-args-file <f>
+    cmp  byte [rdi+1], '-'
+    jne  .check_script_help
+    cmp  dword [rdi+2], 'scri'
+    jne  .check_script_help
+    cmp  dword [rdi+6], 'pt-a'
+    jne  .check_script_help
+    cmp  dword [rdi+10], 'rgs-'
+    jne  .check_script_help
+    cmp  dword [rdi+14], 'file'
+    jne  .check_script_help
+    cmp  byte  [rdi+18], 0
+    jne  .check_script_help
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rax, [rbx+rcx*8]
+    mov  [script_args_file], rax
+    jmp  .arg_next
+
+.check_script_help:
+    ; --script-help=<name>
+    cmp  byte [rdi+1], '-'
+    jne  .check_script_name
+    cmp  dword [rdi+2], 'scri'
+    jne  .check_script_name
+    cmp  dword [rdi+6], 'pt-h'
+    jne  .check_script_name
+    cmp  dword [rdi+10], 'elp='
+    jne  .check_script_name
+    mov  byte [script_help_mode], 1
+    lea  rax, [rdi+14]
+    mov  [script_help_name], rax
+    jmp  .arg_next
+
+.check_script_name:
+    ; --script=<name>
+    cmp  byte [rdi+1], '-'
+    jne  .check_script_args
+    cmp  dword [rdi+2], 'scri'
+    jne  .check_script_args
+    cmp  dword [rdi+6], 'pt='
+    jne  .check_script_args
+    lea  rax, [rdi+10]
+    mov  [script_name_ptr], rax
+    jmp  .arg_next
+
+.check_script_args:
+    ; --script-args=<kv>
+    cmp  byte [rdi+1], '-'
+    jne  .check_proxies
+    cmp  dword [rdi+2], 'scri'
+    jne  .check_proxies
+    cmp  dword [rdi+6], 'pt-a'
+    jne  .check_proxies
+    cmp  dword [rdi+10], 'rgs='
+    jne  .check_proxies
+    lea  rax, [rdi+14]
+    mov  [script_args_ptr], rax
+    jmp  .arg_next
+
+.check_proxies:
+    ; --proxies <urls>
+    cmp  byte [rdi+1], '-'
+    jne  .check_exclude
+    cmp  dword [rdi+2], 'prox'
+    jne  .check_exclude
+    cmp  byte  [rdi+6], 'i'
+    jne  .check_exclude
+    cmp  byte  [rdi+7], 'e'
+    jne  .check_exclude
+    cmp  byte  [rdi+8], 's'
+    jne  .check_exclude
+    cmp  byte  [rdi+9], 0
+    jne  .check_exclude
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rax, [rbx+rcx*8]
+    mov  [proxy_list], rax
+    mov  byte [proxy_count], 1
+    mov  byte [proxy_mode], 1
+    jmp  .arg_next
+
+.check_exclude:
+    ; --exclude <hosts>
+    cmp  byte [rdi+1], '-'
+    jne  .check_exclude_ports
+    cmp  dword [rdi+2], 'excl'
+    jne  .check_exclude_ports
+    cmp  dword [rdi+6], 'ude'
+    jne  .check_exclude_ports
+    cmp  byte  [rdi+9], 0
+    jne  .check_exclude_ports
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_exclude_list
+    jmp  .arg_next
+
+.check_exclude_ports:
+    ; --exclude-ports <r>
+    cmp  byte [rdi+1], '-'
+    jne  .check_decoys
+    cmp  dword [rdi+2], 'excl'
+    jne  .check_decoys
+    cmp  dword [rdi+6], 'ude-'
+    jne  .check_decoys
+    cmp  dword [rdi+10], 'port'
+    jne  .check_decoys
+    cmp  byte  [rdi+14], 's'
+    jne  .check_decoys
+    cmp  byte  [rdi+15], 0
+    jne  .check_decoys
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_port_list
+    mov  [excl_port_count], cx
+    lea  rsi, [port_list_buf]
+    lea  rdi, [excl_port_list]
+    mov  rcx, 256
+    rep  movsw
+    jmp  .arg_next
+
+.check_decoys:
+    ; -D <decoys>
+    cmp  byte [rdi], '-'
+    jne  .check_ps
+    cmp  byte [rdi+1], 'D'
+    jne  .check_ps
+    cmp  byte [rdi+2], 0
+    jne  .check_ps
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_decoy_list
+    jmp  .arg_next
+
+.check_ps:
+    ; -PS[ports]
+    cmp  byte [rdi], '-'
+    jne  .check_pa
+    cmp  byte [rdi+1], 'P'
+    jne  .check_pa
+    cmp  byte [rdi+2], 'S'
+    jne  .check_pa
+    mov  byte [disc_tcp_mode], 1
+    lea  rdi, [rdi+3]
+    call parse_disc_port
+    jmp  .arg_next
+
+.check_pa:
+    ; -PA[ports]
+    cmp  byte [rdi], '-'
+    jne  .check_pu
+    cmp  byte [rdi+1], 'P'
+    jne  .check_pu
+    cmp  byte [rdi+2], 'A'
+    jne  .check_pu
+    mov  byte [disc_tcp_mode], 2
+    lea  rdi, [rdi+3]
+    call parse_disc_port
+    jmp  .arg_next
+
+.check_pu:
+    ; -PU[ports]
+    cmp  byte [rdi], '-'
+    jne  .check_po
+    cmp  byte [rdi+1], 'P'
+    jne  .check_po
+    cmp  byte [rdi+2], 'U'
+    jne  .check_po
+    lea  rdi, [rdi+3]
+    call parse_disc_udp
+    jmp  .arg_next
+
+.check_po:
+    ; -PO[protocols]
+    cmp  byte [rdi], '-'
+    jne  .check_dns_servers
+    cmp  byte [rdi+1], 'P'
+    jne  .check_dns_servers
+    cmp  byte [rdi+2], 'O'
+    jne  .check_dns_servers
+    lea  rdi, [rdi+3]
+    call parse_proto_list
+    jmp  .arg_next
+
+.check_dns_servers:
+    ; --dns-servers <s>
+    cmp  byte [rdi+1], '-'
+    jne  .check_spoof_mac
+    cmp  dword [rdi+2], 'dns-'
+    jne  .check_spoof_mac
+    cmp  dword [rdi+6], 'serv'
+    jne  .check_spoof_mac
+    cmp  dword [rdi+10], 'ers'
+    jne  .check_spoof_mac
+    cmp  byte  [rdi+13], 0
+    jne  .check_spoof_mac
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    call parse_dns_list
+    jmp  .arg_next
+
+.check_spoof_mac:
+    ; --spoof-mac <mac>
+    cmp  byte [rdi+1], '-'
+    jne  .check_oN
+    cmp  dword [rdi+2], 'spoo'
+    jne  .check_oN
+    cmp  dword [rdi+6], 'f-ma'
+    jne  .check_oN
+    cmp  byte  [rdi+10], 'c'
+    jne  .check_oN
+    cmp  byte  [rdi+11], 0
+    jne  .check_oN
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rdi, [rbx+rcx*8]
+    cmp  dword [rdi], 'rand'
+    jne  .parse_mac
+    cmp  byte  [rdi+4], 'o'
+    jne  .parse_mac
+    cmp  byte  [rdi+5], 'm'
+    jne  .parse_mac
+    cmp  byte  [rdi+6], 0
+    jne  .parse_mac
+    mov  byte [spoof_mac_mode], 2
+    jmp  .arg_next
+.parse_mac:
+    lea  rsi, [spoof_mac_addr]
+    call parse_mac
+    test eax, eax
+    jz   .usage
+    cmp  al, 3
+    jne  .mac_full
+    mov  byte [spoof_mac_mode], 1
+    jmp  .arg_next
+.mac_full:
+    mov  byte [spoof_mac_mode], 0
+    jmp  .arg_next
+
+.check_oN:
+    ; -oN <file>
+    cmp  byte [rdi], '-'
+    jne  .check_oX
+    cmp  byte [rdi+1], 'o'
+    jne  .check_oX
+    cmp  byte [rdi+2], 'N'
+    jne  .check_oX
+    cmp  byte [rdi+3], 0
+    jne  .check_oX
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rax, [rbx+rcx*8]
+    mov  [oN_path], rax
+    jmp  .arg_next
+
+.check_oX:
+    ; -oX <file>
+    cmp  byte [rdi], '-'
+    jne  .check_oG
+    cmp  byte [rdi+1], 'o'
+    jne  .check_oG
+    cmp  byte [rdi+2], 'X'
+    jne  .check_oG
+    cmp  byte [rdi+3], 0
+    jne  .check_oG
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rax, [rbx+rcx*8]
+    mov  [oX_path], rax
+    jmp  .arg_next
+
+.check_oG:
+    ; -oG <file>
+    cmp  byte [rdi], '-'
+    jne  .check_oS
+    cmp  byte [rdi+1], 'o'
+    jne  .check_oS
+    cmp  byte [rdi+2], 'G'
+    jne  .check_oS
+    cmp  byte [rdi+3], 0
+    jne  .check_oS
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rax, [rbx+rcx*8]
+    mov  [oG_path], rax
+    jmp  .arg_next
+
+.check_oS:
+    ; -oS <file>
+    cmp  byte [rdi], '-'
+    jne  .check_oA
+    cmp  byte [rdi+1], 'o'
+    jne  .check_oA
+    cmp  byte [rdi+2], 'S'
+    jne  .check_oA
+    cmp  byte [rdi+3], 0
+    jne  .check_oA
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rax, [rbx+rcx*8]
+    mov  [oS_path], rax
+    jmp  .arg_next
+
+.check_oA:
+    ; -oA <base>
+    cmp  byte [rdi], '-'
+    jne  .check_v
+    cmp  byte [rdi+1], 'o'
+    jne  .check_v
+    cmp  byte [rdi+2], 'A'
+    jne  .check_v
+    cmp  byte [rdi+3], 0
+    jne  .check_v
+    inc  rcx
+    cmp  rcx, r13
+    jae  .usage
+    mov  rax, [rbx+rcx*8]
+    mov  [oA_base], rax
+    jmp  .arg_next
+
+.check_v:
+    ; -v / -vv
+    cmp  byte [rdi], '-'
+    jne  .check_d
+    cmp  byte [rdi+1], 'v'
+    jne  .check_d
+    cmp  byte [rdi+2], 'v'
+    jne  .v_single
+    cmp  byte [rdi+3], 0
+    jne  .check_d
+    mov  byte [verbosity], 2
+    jmp  .arg_next
+.v_single:
+    cmp  byte [rdi+2], 0
+    jne  .check_d
+    mov  byte [verbosity], 1
+    jmp  .arg_next
+
+.check_d:
+    ; -d / -dd
+    cmp  byte [rdi], '-'
+    jne  .check_engine
+    cmp  byte [rdi+1], 'd'
+    jne  .check_engine
+    cmp  byte [rdi+2], 'd'
+    jne  .d_single
+    cmp  byte [rdi+3], 0
+    jne  .check_engine
+    mov  byte [debug_level], 2
+    jmp  .arg_next
+.d_single:
+    cmp  byte [rdi+2], 0
+    jne  .check_engine
+    mov  byte [debug_level], 1
     jmp  .arg_next
 
 .check_engine:
@@ -3994,6 +4945,269 @@ print_cstr:
     jmp .c_len
 .c_done:
     call buf_write
+    ret
+
+; -------------------------------------------------------------------
+; parse_exclude_list
+; rdi -> comma-separated IP/CIDR list
+; -------------------------------------------------------------------
+parse_exclude_list:
+    push rbx
+    push r12
+    push r13
+    push r14
+    xor  r12d, r12d                ; count
+    lea  r14, [exclude_list]
+.excl_next:
+    ; find end of token
+    mov  rsi, rdi
+.excl_find_end:
+    mov  al, [rsi]
+    test al, al
+    jz   .excl_token
+    cmp  al, ','
+    je   .excl_token
+    inc  rsi
+    jmp  .excl_find_end
+.excl_token:
+    mov  bl, [rsi]
+    mov  byte [rsi], 0
+    ; check for CIDR
+    mov  rdx, rdi
+    xor  r13d, r13d
+.excl_find_slash:
+    mov  al, [rdx]
+    test al, al
+    jz   .excl_parse_ip
+    cmp  al, '/'
+    je   .excl_cidr
+    inc  rdx
+    jmp  .excl_find_slash
+.excl_parse_ip:
+    mov  rdi, rdi
+    call parse_ip
+    test eax, eax
+    jz   .excl_restore
+    cmp  r12d, 256
+    jae  .excl_restore
+    mov  [r14 + r12*4], eax
+    inc  r12d
+    jmp  .excl_restore
+.excl_cidr:
+    mov  byte [rdx], 0
+    mov  rdi, rdi
+    call parse_ip
+    mov  byte [rdx], '/'
+    test eax, eax
+    jz   .excl_restore
+    mov  ebx, eax                  ; ip
+    lea  rdi, [rdx+1]
+    call parse_u32
+    test eax, eax
+    jz   .excl_restore
+    cmp  eax, 32
+    ja   .excl_restore
+    mov  ecx, eax                  ; prefix
+    mov  eax, 0xFFFFFFFF
+    test ecx, ecx
+    jz   .excl_restore
+    mov  edx, 32
+    sub  edx, ecx
+    mov  cl, dl
+    shl  eax, cl
+    and  ebx, eax                  ; network
+    mov  edx, 32
+    sub  edx, ecx
+    cmp  edx, 1
+    jbe  .excl_restore
+    mov  eax, 1
+    mov  cl, dl
+    shl  eax, cl
+    sub  eax, 2                    ; host_count
+    mov  r13d, eax
+    mov  eax, ebx
+    inc  eax                       ; first host
+.excl_cidr_loop:
+    test r13d, r13d
+    jz   .excl_restore
+    cmp  r12d, 256
+    jae  .excl_restore
+    mov  [r14 + r12*4], eax
+    inc  r12d
+    inc  eax
+    dec  r13d
+    jmp  .excl_cidr_loop
+.excl_restore:
+    mov  byte [rsi], bl
+    cmp  bl, 0
+    je   .excl_done
+    lea  rdi, [rsi+1]
+    jmp  .excl_next
+.excl_done:
+    mov  [exclude_count], r12w
+    pop  r14
+    pop  r13
+    pop  r12
+    pop  rbx
+    ret
+
+; -------------------------------------------------------------------
+; parse_decoy_list
+; rdi -> comma-separated list (IPs or ME)
+; -------------------------------------------------------------------
+parse_decoy_list:
+    push rbx
+    push r12
+    xor  r12d, r12d
+.decoy_next:
+    mov  rsi, rdi
+.decoy_find_end:
+    mov  al, [rsi]
+    test al, al
+    jz   .decoy_token
+    cmp  al, ','
+    je   .decoy_token
+    inc  rsi
+    jmp  .decoy_find_end
+.decoy_token:
+    mov  bl, [rsi]
+    mov  byte [rsi], 0
+    cmp  byte [rdi], 'M'
+    jne  .decoy_ip
+    cmp  byte [rdi+1], 'E'
+    jne  .decoy_ip
+    cmp  byte [rdi+2], 0
+    jne  .decoy_ip
+    mov  [decoy_me_pos], r12b
+    jmp  .decoy_restore
+.decoy_ip:
+    call parse_ip
+    test eax, eax
+    jz   .decoy_restore
+    cmp  r12d, 8
+    jae  .decoy_restore
+    mov  [decoy_list + r12*4], eax
+    inc  r12d
+.decoy_restore:
+    mov  byte [rsi], bl
+    cmp  bl, 0
+    je   .decoy_done
+    lea  rdi, [rsi+1]
+    jmp  .decoy_next
+.decoy_done:
+    mov  [decoy_count], r12b
+    pop  r12
+    pop  rbx
+    ret
+
+; -------------------------------------------------------------------
+; parse_disc_port
+; rdi -> optional port list (empty = keep default)
+; -------------------------------------------------------------------
+parse_disc_port:
+    mov  al, [rdi]
+    test al, al
+    jz   .disc_done
+    call parse_port
+    test ax, ax
+    jz   .disc_done
+    mov  [disc_tcp_port], ax
+.disc_done:
+    ret
+
+; -------------------------------------------------------------------
+; parse_disc_udp
+; rdi -> optional UDP port list (empty = keep default)
+; -------------------------------------------------------------------
+parse_disc_udp:
+    mov  al, [rdi]
+    test al, al
+    jz   .disc_udp_done
+    call parse_port
+    test ax, ax
+    jz   .disc_udp_done
+    mov  [disc_udp_port], ax
+.disc_udp_done:
+    ret
+
+; -------------------------------------------------------------------
+; parse_proto_list
+; rdi -> comma-separated protocol numbers
+; -------------------------------------------------------------------
+parse_proto_list:
+    push rbx
+    push r12
+    xor  r12d, r12d
+.proto_next:
+    mov  rsi, rdi
+.proto_find_end:
+    mov  al, [rsi]
+    test al, al
+    jz   .proto_token
+    cmp  al, ','
+    je   .proto_token
+    inc  rsi
+    jmp  .proto_find_end
+.proto_token:
+    mov  bl, [rsi]
+    mov  byte [rsi], 0
+    call parse_u32
+    test eax, eax
+    jz   .proto_restore
+    cmp  r12d, 8
+    jae  .proto_restore
+    mov  [disc_proto_list + r12], al
+    inc  r12d
+.proto_restore:
+    mov  byte [rsi], bl
+    cmp  bl, 0
+    je   .proto_done
+    lea  rdi, [rsi+1]
+    jmp  .proto_next
+.proto_done:
+    mov  [disc_proto_count], r12b
+    pop  r12
+    pop  rbx
+    ret
+
+; -------------------------------------------------------------------
+; parse_dns_list
+; rdi -> comma-separated IP list
+; -------------------------------------------------------------------
+parse_dns_list:
+    push rbx
+    push r12
+    xor  r12d, r12d
+.dns_next:
+    mov  rsi, rdi
+.dns_find_end:
+    mov  al, [rsi]
+    test al, al
+    jz   .dns_token
+    cmp  al, ','
+    je   .dns_token
+    inc  rsi
+    jmp  .dns_find_end
+.dns_token:
+    mov  bl, [rsi]
+    mov  byte [rsi], 0
+    call parse_ip
+    test eax, eax
+    jz   .dns_restore
+    cmp  r12d, 4
+    jae  .dns_restore
+    mov  [dns_server_list + r12*4], eax
+    inc  r12d
+.dns_restore:
+    mov  byte [rsi], bl
+    cmp  bl, 0
+    je   .dns_done
+    lea  rdi, [rsi+1]
+    jmp  .dns_next
+.dns_done:
+    mov  [dns_server_count], r12b
+    pop  r12
+    pop  rbx
     ret
 
 ; -------------------------------------------------------------------

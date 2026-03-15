@@ -417,6 +417,97 @@ parse_timespec:
     ret
 
 ; ------------------------------------------------------------
+; parse_hex_string
+; Input:  rdi -> hex string (e.g. "DEADBEEF" or "de:ad:be:ef")
+;         rsi -> dest buffer
+;         rcx -> max bytes
+; Output: al = bytes written, eax=0 on error
+; Trashes: rbx, rdx
+; ------------------------------------------------------------
+parse_hex_string:
+    push rbx
+    xor  eax, eax                 ; bytes written
+.hex_skip:
+    mov  bl, [rdi]
+    test bl, bl
+    jz   .hex_done
+    cmp  bl, ':'
+    je   .hex_advance
+    cmp  bl, ' '
+    je   .hex_advance
+    ; need two hex chars
+    call .hex_nibble
+    test al, al
+    jz   .hex_fail
+    mov  dl, al
+    inc  rdi
+    call .hex_nibble
+    test al, al
+    jz   .hex_fail
+    shl  dl, 4
+    or   dl, al
+    cmp  eax, ecx
+    jae  .hex_fail
+    mov  [rsi+rax], dl
+    inc  eax
+    inc  rdi
+    jmp  .hex_skip
+.hex_advance:
+    inc  rdi
+    jmp  .hex_skip
+.hex_done:
+    test eax, eax
+    jz   .hex_fail
+    pop  rbx
+    ret
+.hex_fail:
+    xor  eax, eax
+    pop  rbx
+    ret
+.hex_nibble:
+    mov  al, [rdi]
+    cmp  al, '0'
+    jb   .hex_nib_fail
+    cmp  al, '9'
+    jbe  .hex_nib_ok_num
+    cmp  al, 'a'
+    jb   .hex_nib_check_A
+    cmp  al, 'f'
+    jbe  .hex_nib_ok_l
+    jmp  .hex_nib_fail
+.hex_nib_check_A:
+    cmp  al, 'A'
+    jb   .hex_nib_fail
+    cmp  al, 'F'
+    ja   .hex_nib_fail
+    sub  al, 'A'
+    add  al, 10
+    ret
+.hex_nib_ok_num:
+    sub  al, '0'
+    ret
+.hex_nib_ok_l:
+    sub  al, 'a'
+    add  al, 10
+    ret
+.hex_nib_fail:
+    xor  al, al
+    ret
+
+; ------------------------------------------------------------
+; parse_mac
+; Input:  rdi -> MAC string ("XX:XX:XX:XX:XX:XX" or "XXXXXX")
+;         rsi -> dest buffer (6 bytes)
+; Output: al = bytes written (3 or 6), eax=0 on error
+; ------------------------------------------------------------
+parse_mac:
+    push rcx
+    mov  rcx, 6
+    call parse_hex_string
+    pop  rcx
+    ret
+
+; ------------------------------------------------------------
 ; parse_scan_mode
 ; Input:  rdi -> null-terminated mode string
 ; Output: al = SCAN_xxx constant, or 0 on error

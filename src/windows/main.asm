@@ -1018,6 +1018,8 @@ min_rate            resd 1
 max_scan_delay_us   resd 1
 min_parallel        resw 1
 max_parallel        resw 1
+min_hostgroup       resd 1
+max_hostgroup       resd 1
 min_rtt_timeout     resd 1
 max_rtt_timeout     resd 1
 initial_rtt_timeout resd 1
@@ -4792,6 +4794,265 @@ print_cstr:
     jmp .c_len
 .c_done:
     call buf_write
+    ret
+
+; -------------------------------------------------------------------
+; parse_exclude_list
+; rdi -> comma-separated IP/CIDR list
+; -------------------------------------------------------------------
+parse_exclude_list:
+    push rbx
+    push r12
+    push r13
+    push r14
+    xor  r12d, r12d                ; count
+    lea  r14, [exclude_list]
+.excl_next:
+    mov  rsi, rdi
+.excl_find_end:
+    mov  al, [rsi]
+    test al, al
+    jz   .excl_token
+    cmp  al, ','
+    je   .excl_token
+    inc  rsi
+    jmp  .excl_find_end
+.excl_token:
+    mov  bl, [rsi]
+    mov  byte [rsi], 0
+    mov  rdx, rdi
+    xor  r13d, r13d
+.excl_find_slash:
+    mov  al, [rdx]
+    test al, al
+    jz   .excl_parse_ip
+    cmp  al, '/'
+    je   .excl_cidr
+    inc  rdx
+    jmp  .excl_find_slash
+.excl_parse_ip:
+    call parse_ip
+    test eax, eax
+    jz   .excl_restore
+    cmp  r12d, 256
+    jae  .excl_restore
+    mov  [r14 + r12*4], eax
+    inc  r12d
+    jmp  .excl_restore
+.excl_cidr:
+    mov  byte [rdx], 0
+    call parse_ip
+    mov  byte [rdx], '/'
+    test eax, eax
+    jz   .excl_restore
+    mov  ebx, eax
+    lea  rdi, [rdx+1]
+    call parse_u32
+    test eax, eax
+    jz   .excl_restore
+    cmp  eax, 32
+    ja   .excl_restore
+    mov  ecx, eax
+    mov  eax, 0xFFFFFFFF
+    test ecx, ecx
+    jz   .excl_restore
+    mov  edx, 32
+    sub  edx, ecx
+    mov  cl, dl
+    shl  eax, cl
+    and  ebx, eax
+    mov  edx, 32
+    sub  edx, ecx
+    cmp  edx, 1
+    jbe  .excl_restore
+    mov  eax, 1
+    mov  cl, dl
+    shl  eax, cl
+    sub  eax, 2
+    mov  r13d, eax
+    mov  eax, ebx
+    inc  eax
+.excl_cidr_loop:
+    test r13d, r13d
+    jz   .excl_restore
+    cmp  r12d, 256
+    jae  .excl_restore
+    mov  [r14 + r12*4], eax
+    inc  r12d
+    inc  eax
+    dec  r13d
+    jmp  .excl_cidr_loop
+.excl_restore:
+    mov  byte [rsi], bl
+    cmp  bl, 0
+    je   .excl_done
+    lea  rdi, [rsi+1]
+    jmp  .excl_next
+.excl_done:
+    mov  [exclude_count], r12w
+    pop  r14
+    pop  r13
+    pop  r12
+    pop  rbx
+    ret
+
+; -------------------------------------------------------------------
+; parse_decoy_list
+; rdi -> comma-separated list (IPs or ME)
+; -------------------------------------------------------------------
+parse_decoy_list:
+    push rbx
+    push r12
+    xor  r12d, r12d
+.decoy_next:
+    mov  rsi, rdi
+.decoy_find_end:
+    mov  al, [rsi]
+    test al, al
+    jz   .decoy_token
+    cmp  al, ','
+    je   .decoy_token
+    inc  rsi
+    jmp  .decoy_find_end
+.decoy_token:
+    mov  bl, [rsi]
+    mov  byte [rsi], 0
+    cmp  byte [rdi], 'M'
+    jne  .decoy_ip
+    cmp  byte [rdi+1], 'E'
+    jne  .decoy_ip
+    cmp  byte [rdi+2], 0
+    jne  .decoy_ip
+    mov  [decoy_me_pos], r12b
+    jmp  .decoy_restore
+.decoy_ip:
+    call parse_ip
+    test eax, eax
+    jz   .decoy_restore
+    cmp  r12d, 8
+    jae  .decoy_restore
+    mov  [decoy_list + r12*4], eax
+    inc  r12d
+.decoy_restore:
+    mov  byte [rsi], bl
+    cmp  bl, 0
+    je   .decoy_done
+    lea  rdi, [rsi+1]
+    jmp  .decoy_next
+.decoy_done:
+    mov  [decoy_count], r12b
+    pop  r12
+    pop  rbx
+    ret
+
+; -------------------------------------------------------------------
+; parse_disc_port
+; rdi -> optional port list (empty = keep default)
+; -------------------------------------------------------------------
+parse_disc_port:
+    mov  al, [rdi]
+    test al, al
+    jz   .disc_done
+    call parse_port
+    test ax, ax
+    jz   .disc_done
+    mov  [disc_tcp_port], ax
+.disc_done:
+    ret
+
+; -------------------------------------------------------------------
+; parse_disc_udp
+; rdi -> optional UDP port list (empty = keep default)
+; -------------------------------------------------------------------
+parse_disc_udp:
+    mov  al, [rdi]
+    test al, al
+    jz   .disc_udp_done
+    call parse_port
+    test ax, ax
+    jz   .disc_udp_done
+    mov  [disc_udp_port], ax
+.disc_udp_done:
+    ret
+
+; -------------------------------------------------------------------
+; parse_proto_list
+; rdi -> comma-separated protocol numbers
+; -------------------------------------------------------------------
+parse_proto_list:
+    push rbx
+    push r12
+    xor  r12d, r12d
+.proto_next:
+    mov  rsi, rdi
+.proto_find_end:
+    mov  al, [rsi]
+    test al, al
+    jz   .proto_token
+    cmp  al, ','
+    je   .proto_token
+    inc  rsi
+    jmp  .proto_find_end
+.proto_token:
+    mov  bl, [rsi]
+    mov  byte [rsi], 0
+    call parse_u32
+    test eax, eax
+    jz   .proto_restore
+    cmp  r12d, 8
+    jae  .proto_restore
+    mov  [disc_proto_list + r12], al
+    inc  r12d
+.proto_restore:
+    mov  byte [rsi], bl
+    cmp  bl, 0
+    je   .proto_done
+    lea  rdi, [rsi+1]
+    jmp  .proto_next
+.proto_done:
+    mov  [disc_proto_count], r12b
+    pop  r12
+    pop  rbx
+    ret
+
+; -------------------------------------------------------------------
+; parse_dns_list
+; rdi -> comma-separated IP list
+; -------------------------------------------------------------------
+parse_dns_list:
+    push rbx
+    push r12
+    xor  r12d, r12d
+.dns_next:
+    mov  rsi, rdi
+.dns_find_end:
+    mov  al, [rsi]
+    test al, al
+    jz   .dns_token
+    cmp  al, ','
+    je   .dns_token
+    inc  rsi
+    jmp  .dns_find_end
+.dns_token:
+    mov  bl, [rsi]
+    mov  byte [rsi], 0
+    call parse_ip
+    test eax, eax
+    jz   .dns_restore
+    cmp  r12d, 4
+    jae  .dns_restore
+    mov  [dns_server_list + r12*4], eax
+    inc  r12d
+.dns_restore:
+    mov  byte [rsi], bl
+    cmp  bl, 0
+    je   .dns_done
+    lea  rdi, [rsi+1]
+    jmp  .dns_next
+.dns_done:
+    mov  [dns_server_count], r12b
+    pop  r12
+    pop  rbx
     ret
 
 ; -------------------------------------------------------------------
