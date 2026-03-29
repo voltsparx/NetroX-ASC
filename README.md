@@ -1,4 +1,4 @@
-# NetroX-ASC
+# NetroX-ASC (Project Under Development!)
 
 Phase 1 foundation: Sequential SYN probe in pure x86_64 assembly (Linux + Windows).
 
